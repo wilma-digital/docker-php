@@ -10,7 +10,7 @@ ARG PHP_PECL_REQUIREMENTS="redis igbinary"
 ARG PHP_CONFIGURE_ARGS="--enable-soap --enable-intl"
 ARG PHP_CONFIGURE_ARGS_EXTRA=""
 ARG PHP_CONFIGURE_ARGS_FPM="--enable-fpm --with-fpm-user=www-data --with-fpm-group=www-data"
-ARG PHP_VERSION="8.4.13"
+ARG PHP_VERSION="8.4.14"
 
 ENV PHP_CFLAGS="-fstack-protector-strong -fpic -fpie -O2" \
     PHP_CPPFLAGS="-fstack-protector-strong -fpic -fpie -O2" \
@@ -22,7 +22,7 @@ ENV PHP_CFLAGS="-fstack-protector-strong -fpic -fpie -O2" \
     PHPIZE_BUILD_REQUIREMENTS="build-essential automake autoconf libtool file g++ gcc libc-dev make pkg-config re2c libltdl-dev" \
     DOCUMENT_ROOT="/var/www/html" \
     PHP_URL="https://www.php.net/distributions/php-${PHP_VERSION}.tar.xz" \
-    IMAGICK_VERSION="3.7.0"
+    IMAGICK_VERSION="3.8.0"
 
 ### configure php
 # hadolint ignore=DL4006,SC2039,DL3003
@@ -90,28 +90,21 @@ RUN set -xe; \
             ; \
     make -j "$(nproc)"; \
     make install;
-RUN curl -L -o /tmp/imagick.tar.gz https://github.com/Imagick/imagick/archive/refs/tags/3.7.0.tar.gz \
-    && tar --strip-components=1 -xf /tmp/imagick.tar.gz \
-    && phpize \
-    && ./configure \
-    && make \
-    && make install \
-    && echo "extension=imagick.so" > /usr/local/etc/php/conf.d/ext-imagick.ini \
-    && rm -rf /tmp/*
 RUN set -xe; \
     \
     docker-php-ext-install gd zip; \
     curl -fsSL  https://github.com/FriendsOfPHP/pickle/releases/latest/download/pickle.phar -o pickle.phar; \
     chmod +x pickle.phar; \
     mv pickle.phar /usr/local/bin/pickle; \
+    pickle install imagick; \
     pickle install redis; \
     pickle install igbinary; \
     pickle install xdebug; \
-    docker-php-ext-enable imagick opcache redis imagick igbinary gd; \
+    docker-php-ext-enable opcache redis imagick igbinary gd; \
     docker-php-source delete;
+# for some reason, upstream's php-fpm.conf.default has "include=NONE/etc/php-fpm.d/*.conf"
 RUN set -xe; \
     \
-    # for some reason, upstream's php-fpm.conf.default has "include=NONE/etc/php-fpm.d/*.conf"
     sed 's!=NONE/!=!g' /usr/local/etc/php-fpm.conf.default | tee /usr/local/etc/php-fpm.conf > /dev/null; \
     cp /usr/local/etc/php-fpm.d/www.conf.default /usr/local/etc/php-fpm.d/www.conf; \
     { \
@@ -141,35 +134,35 @@ RUN set -xe; \
 
 ## configure php extensions
 # hadolint ignore=DL4006,SC2086,DL3003
+################################################
+## install Composer 2 as default
+################################################
 RUN set -xe; \
     \
-    ################################################
-    ## install Composer 2 as default
-    ################################################
     COMPOSER_DOWNLOAD_LATEST=$(curl -s https://api.github.com/repos/composer/composer/releases/latest | jq --raw-output '.assets[] | .browser_download_url' | head -n 1) ; \
     docker-package-download -o /usr/local/bin/composer ${COMPOSER_DOWNLOAD_LATEST}; \
     chmod +x /usr/local/bin/composer; \
     composer selfupdate;
+################################################
+## install Composer 1
+################################################
 RUN set -xe; \
     \
-    ################################################
-    ## install Composer 1
-    ################################################
     docker-package-download -o /usr/local/bin/composer1 https://getcomposer.org/composer-1.phar; \
     chmod +x /usr/local/bin/composer1; \
     composer1 selfupdate;
+################################################
+## install magerun
+################################################
 RUN set -xe; \
     \
-    ################################################
-    ## install magerun
-    ################################################
     curl -s -f -L -o /usr/local/bin/magerun https://files.magerun.net/n98-magerun.phar; \
     chmod +x /usr/local/bin/magerun;
+################################################
+## install magerun2
+################################################
 RUN set -xe; \
     \
-    ################################################
-    ## install magerun2
-    ################################################
     curl -s -f -L -o /usr/local/bin/magerun2 https://files.magerun.net/n98-magerun2.phar; \
     chmod +x /usr/local/bin/magerun2; \
     /usr/local/bin/docker-layer-clean;
