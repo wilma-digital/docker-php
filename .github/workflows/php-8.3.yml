@@ -7,49 +7,245 @@ on:
     paths:
       - 'src/8.3/**'
       - '.github/workflows/php-8.3.yml'
+      - 'Dockerfile.template'
+      - 'versions.json'
   schedule:
-    - cron:  '00 7 * * 1'
+    - cron: '00 7 * * 1'
 
 jobs:
-  build:
+  build-base:
+    name: "PHP ${{ matrix.version }}.${{ matrix.patchVersion }}"
     runs-on: ubuntu-latest
     strategy:
       matrix:
         version: ['8.3']
-        patchVersion: [23,24,25,26,27]
+        patchVersion: [0, 1, 2, 3]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
-        id: buildx
         uses: docker/setup-buildx-action@v3
+
       - name: Login to DockerHub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
-      - name: Build php image
-        id: docker_build
+
+      - name: Build and push php image
         uses: docker/build-push-action@v6
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: openmage/php:${{ matrix.version }}.${{ matrix.patchVersion }}
+          tags: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}
           context: ./src/${{ matrix.version }}/src
           file: ./src/${{ matrix.version }}/src/Dockerfile
           target: php
           build-args: |
-           PHP_VERSION=${{ matrix.version }}.${{ matrix.patchVersion }}
-      - name: Build toolbox image
+            PHP_VERSION=${{ matrix.version }}.${{ matrix.patchVersion }}
+          cache-from: type=registry,ref=wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}
+          cache-to: type=inline
+
+      - name: Run Trivy vulnerability scanner on php image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Generate SBOM for php image
+        uses: anchore/sbom-action@v0
+        with:
+          image: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}
+          format: spdx-json
+          output-file: sbom-php.spdx.json
+
+      - name: Upload SBOM as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-php-${{ matrix.version }}.${{ matrix.patchVersion }}
+          path: sbom-php.spdx.json
+          retention-days: 90
+
+      - name: Smoke test php image
+        run: |
+          docker pull wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}
+          echo "→ Testing PHP version..."
+          docker run --rm wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }} php -v
+          echo "→ Testing PHP extensions..."
+          docker run --rm wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }} php -m | grep -E "redis|imagick|opcache"
+          echo "→ Testing Composer..."
+          docker run --rm wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }} composer --version
+          echo "✓ All smoke tests passed"
+
+      - name: Build and push toolbox image
         uses: docker/build-push-action@v6
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: openmage/php:${{ matrix.version }}.${{ matrix.patchVersion }}-toolbox
+          tags: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-toolbox
           context: ./src/${{ matrix.version }}/src
           file: ./src/${{ matrix.version }}/src/Dockerfile
           target: toolbox
           build-args: |
             PHP_VERSION=${{ matrix.version }}.${{ matrix.patchVersion }}
+          cache-from: type=registry,ref=wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-toolbox
+          cache-to: type=inline
+
+      - name: Run Trivy vulnerability scanner on toolbox image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-toolbox
+          format: 'sarif'
+          output: 'trivy-results-toolbox.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results for toolbox to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results-toolbox.sarif'
+
+      - name: Generate SBOM for toolbox image
+        uses: anchore/sbom-action@v0
+        with:
+          image: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-toolbox
+          format: spdx-json
+          output-file: sbom-toolbox.spdx.json
+
+      - name: Upload SBOM as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-toolbox-${{ matrix.version }}.${{ matrix.patchVersion }}
+          path: sbom-toolbox.spdx.json
+          retention-days: 90
+
+  build-node:
+    name: "PHP ${{ matrix.version }}.${{ matrix.patchVersion }} + Node ${{ matrix.nodeVersion }}"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        version: ['8.3']
+        patchVersion: [0, 1, 2, 3]
+        nodeVersion: [22, 24, 25]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Build and push php+node image
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}
+          context: ./src/${{ matrix.version }}/node${{ matrix.nodeVersion }}/src
+          file: ./src/${{ matrix.version }}/node${{ matrix.nodeVersion }}/src/Dockerfile
+          target: php
+          build-args: |
+            PHP_VERSION=${{ matrix.version }}.${{ matrix.patchVersion }}
+          cache-from: type=registry,ref=wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}
+          cache-to: type=inline
+
+      - name: Run Trivy vulnerability scanner on php+node image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}
+          format: 'sarif'
+          output: 'trivy-results-node.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results for php+node to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results-node.sarif'
+
+      - name: Generate SBOM for php+node image
+        uses: anchore/sbom-action@v0
+        with:
+          image: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}
+          format: spdx-json
+          output-file: sbom-node.spdx.json
+
+      - name: Upload SBOM as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-node-${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}
+          path: sbom-node.spdx.json
+          retention-days: 90
+
+      - name: Smoke test php+node image
+        run: |
+          docker pull wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}
+          echo "→ Testing PHP version..."
+          docker run --rm wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }} php -v
+          echo "→ Testing Node.js..."
+          docker run --rm wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }} node -v
+          echo "→ Testing npm..."
+          docker run --rm wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }} npm -v
+          echo "✓ All smoke tests passed"
+
+      - name: Build and push toolbox+node image
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}-toolbox
+          context: ./src/${{ matrix.version }}/node${{ matrix.nodeVersion }}/src
+          file: ./src/${{ matrix.version }}/node${{ matrix.nodeVersion }}/src/Dockerfile
+          target: toolbox
+          build-args: |
+            PHP_VERSION=${{ matrix.version }}.${{ matrix.patchVersion }}
+          cache-from: type=registry,ref=wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}-toolbox
+          cache-to: type=inline
+
+      - name: Run Trivy vulnerability scanner on toolbox+node image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}-toolbox
+          format: 'sarif'
+          output: 'trivy-results-toolbox-node.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results for toolbox+node to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results-toolbox-node.sarif'
+
+      - name: Generate SBOM for toolbox+node image
+        uses: anchore/sbom-action@v0
+        with:
+          image: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}-toolbox
+          format: spdx-json
+          output-file: sbom-toolbox-node.spdx.json
+
+      - name: Upload SBOM as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-toolbox-node-${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}
+          path: sbom-toolbox-node.spdx.json
+          retention-days: 90
