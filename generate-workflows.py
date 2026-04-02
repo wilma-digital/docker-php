@@ -18,6 +18,16 @@ def generate_workflow(version: str, patch_versions: list, node_versions: list) -
     patch_str = ', '.join(str(p) for p in patch_versions)
     node_str = ', '.join(str(n) for n in node_versions)
 
+    # Stagger schedule times to avoid Docker Hub rate limits
+    schedule_times = {
+        '8.1': '00 7 * * 1',  # Monday 07:00
+        '8.2': '30 7 * * 1',  # Monday 07:30
+        '8.3': '00 8 * * 1',  # Monday 08:00
+        '8.4': '30 8 * * 1',  # Monday 08:30
+        '8.5': '00 9 * * 1',  # Monday 09:00
+    }
+    cron_time = schedule_times.get(version, '00 7 * * 1')
+
     workflow = f"""name: "{version}"
 on:
   workflow_dispatch:
@@ -30,12 +40,17 @@ on:
       - 'Dockerfile.template'
       - 'versions.json'
   schedule:
-    - cron: '00 7 * * 1'
+    - cron: '{cron_time}'
 
 permissions:
   contents: read
   security-events: write
   actions: read
+
+# Prevent parallel workflow runs to avoid Docker Hub rate limits
+concurrency:
+  group: php-{version}-build
+  cancel-in-progress: false
 
 jobs:
   build-base:
@@ -72,8 +87,8 @@ jobs:
           target: php
           build-args: |
             PHP_VERSION=${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}
-          cache-from: type=registry,ref=wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}
-          cache-to: type=inline
+          cache-from: type=gha,scope=php-${{{{ matrix.version }}}}-${{{{ matrix.patchVersion }}}}
+          cache-to: type=gha,mode=max,scope=php-${{{{ matrix.version }}}}-${{{{ matrix.patchVersion }}}}
 
       - name: Run Trivy vulnerability scanner on php image
         uses: aquasecurity/trivy-action@master
@@ -126,8 +141,8 @@ jobs:
           target: toolbox
           build-args: |
             PHP_VERSION=${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}
-          cache-from: type=registry,ref=wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-toolbox
-          cache-to: type=inline
+          cache-from: type=gha,scope=toolbox-${{{{ matrix.version }}}}-${{{{ matrix.patchVersion }}}}
+          cache-to: type=gha,mode=max,scope=toolbox-${{{{ matrix.version }}}}-${{{{ matrix.patchVersion }}}}
 
       - name: Run Trivy vulnerability scanner on toolbox image
         uses: aquasecurity/trivy-action@master
@@ -193,8 +208,8 @@ jobs:
           target: php
           build-args: |
             PHP_VERSION=${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}
-          cache-from: type=registry,ref=wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-node${{{{ matrix.nodeVersion }}}}
-          cache-to: type=inline
+          cache-from: type=gha,scope=node-${{{{ matrix.version }}}}-${{{{ matrix.patchVersion }}}}-${{{{ matrix.nodeVersion }}}}
+          cache-to: type=gha,mode=max,scope=node-${{{{ matrix.version }}}}-${{{{ matrix.patchVersion }}}}-${{{{ matrix.nodeVersion }}}}
 
       - name: Run Trivy vulnerability scanner on php+node image
         uses: aquasecurity/trivy-action@master
@@ -247,8 +262,8 @@ jobs:
           target: toolbox
           build-args: |
             PHP_VERSION=${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}
-          cache-from: type=registry,ref=wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-node${{{{ matrix.nodeVersion }}}}-toolbox
-          cache-to: type=inline
+          cache-from: type=gha,scope=toolbox-node-${{{{ matrix.version }}}}-${{{{ matrix.patchVersion }}}}-${{{{ matrix.nodeVersion }}}}
+          cache-to: type=gha,mode=max,scope=toolbox-node-${{{{ matrix.version }}}}-${{{{ matrix.patchVersion }}}}-${{{{ matrix.nodeVersion }}}}
 
       - name: Run Trivy vulnerability scanner on toolbox+node image
         uses: aquasecurity/trivy-action@master
