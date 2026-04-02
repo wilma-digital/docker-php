@@ -32,7 +32,7 @@ def substitute_template(template: str, variables: dict) -> str:
 
 def add_nodejs_support(dockerfile: str, node_version: int) -> str:
     """Add Node.js installation to Dockerfile."""
-    # Add Node.js installation after runtime dependencies
+    # Add Node.js installation after runtime dependencies in php stage
     # Using new NodeSource repository method (2023+)
     nodejs_install = f"""
 # Install Node.js {node_version}
@@ -43,13 +43,12 @@ RUN apt-get update && \\
     echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_{node_version}.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list && \\
     apt-get update && \\
     apt-get install -y nodejs && \\
-    npm install -g npm@latest && \\
     apt-get clean && \\
     rm -rf /var/lib/apt/lists/*
 """
 
-    # Insert after the runtime dependencies installation
-    insert_after = "rm -rf /var/lib/apt/lists/*"
+    # Insert after mhsendmail installation (only exists in runtime stage)
+    insert_after = "chmod +x /usr/local/bin/mhsendmail"
     parts = dockerfile.split(insert_after, 1)
 
     if len(parts) == 2:

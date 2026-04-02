@@ -6,7 +6,11 @@
       "Bash(docker build:*)",
       "Bash(git -C \"/Users/amautz/www/03 RESSOURCEN/INFRA/docker-php\" log --oneline --all -20)",
       "Bash(git add:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(docker run:*)",
+      "Bash(git checkout:*)",
+      "Bash(tee:*)",
+      "Bash(docker logs:*)"
     ]
   }
 }

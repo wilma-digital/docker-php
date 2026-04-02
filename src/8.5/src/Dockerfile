@@ -79,7 +79,7 @@ FROM wilmadigital/php-base:trixie-latest AS php
 COPY FS /
 
 ARG PHP_VERSION="8.5.3"
-ARG PHP_RUNTIME_REQUIREMENTS="jq curl libzip-dev libicu-dev libcurl3-gnutls ca-certificates libedit2 libgmp-dev libfreetype6 libltdl7 libmcrypt4 sqlite3 libpng16-16 libfcgi-bin libtidy-dev libsodium23 libonig5 cron zip"
+ARG PHP_RUNTIME_REQUIREMENTS="jq curl libzip-dev libicu-dev libcurl3-gnutls ca-certificates libedit2 libgmp-dev libfreetype6 libltdl7 libmcrypt4 sqlite3 libpng16-16 libfcgi-bin libtidy-dev libsodium23 libonig5 cron zip libxml2 libxslt1.1 libssl3 zlib1g libreadline8 libargon2-1"
 ARG PHP_RUNTIME_REQUIREMENTS_EXTRA=""
 ARG IMAGICK_VERSION="3.8.0"
 
@@ -112,7 +112,7 @@ RUN curl -fsSL -o /usr/local/bin/mhsendmail \
 # Install PHP extensions using pickle
 RUN set -xe && \
     apt-get update && \
-    apt-get install -y --no-install-recommends ${PHPIZE_BUILD_REQUIREMENTS} libmagickwand-dev && \
+    apt-get install -y --no-install-recommends ${PHPIZE_BUILD_REQUIREMENTS} && \
     curl -fsSL https://github.com/FriendsOfPHP/pickle/releases/latest/download/pickle.phar -o /usr/local/bin/pickle && \
     chmod +x /usr/local/bin/pickle && \
     pickle install imagick && \
@@ -123,7 +123,7 @@ RUN set -xe && \
     echo "extension=igbinary.so" > /usr/local/etc/php/conf.d/20-igbinary.ini && \
     echo "zend_extension=opcache.so" > /usr/local/etc/php/conf.d/10-opcache.ini && \
     rm -f /usr/local/bin/pickle && \
-    apt-get purge -y --auto-remove ${PHPIZE_BUILD_REQUIREMENTS} libmagickwand-dev && \
+    apt-get purge -y --auto-remove ${PHPIZE_BUILD_REQUIREMENTS} && \
     rm -rf /var/lib/apt/lists/*
 
 # Configure PHP-FPM
@@ -164,11 +164,11 @@ RUN set -xe && \
     /usr/local/bin/docker-layer-clean
 
 # Set up permissions for www-data user
-RUN chown -R www-data:www-data /var/www/html && \
+RUN mkdir -p /var/www/html && \
+    chown -R www-data:www-data /var/www/html && \
     chmod -R 755 /var/www/html
 
 WORKDIR /var/www/html
-USER www-data
 
 # Health check for PHP-FPM status endpoint
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \

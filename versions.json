@@ -4,35 +4,35 @@
       "php_version": "8.1.34",
       "base_image": "wilmadigital/php-base:bookworm-latest",
       "patch_versions": [0, 1, 2, 3],
-      "php_runtime_libs": "jq curl libcurl3-gnutls ca-certificates libedit2 libgmp-dev libfreetype6 libltdl7 libmcrypt4 sqlite3 libpng16-16 libzip4 libfcgi-bin libtidy5deb1 libsodium23 libonig5 cron zip",
+      "php_runtime_libs": "jq curl libcurl3-gnutls ca-certificates libedit2 libgmp-dev libfreetype6 libltdl7 libmcrypt4 sqlite3 libpng16-16 libzip4 libfcgi-bin libtidy5deb1 libsodium23 libonig5 cron zip libxml2 libxslt1.1 libssl3 zlib1g libreadline8 libicu72 libargon2-1",
       "php_build_libs": "build-essential curl dpkg-dev automake autoconf libtool file g++ gcc libc-dev make pkg-config re2c libxml2-dev libcurl4-gnutls-dev libtidy-dev libsqlite3-dev libssl-dev zlib1g-dev libpng-dev liblzf-dev libreadline6-dev libfreetype6-dev libmcrypt-dev libedit-dev libltdl-dev libxslt-dev libzip-dev libsodium-dev libonig-dev gnupg2 argon2 libargon2-0 libargon2-dev libicu-dev"
     },
     "8.2": {
       "php_version": "8.2.30",
       "base_image": "wilmadigital/php-base:bookworm-latest",
       "patch_versions": [0, 1, 2, 3],
-      "php_runtime_libs": "jq curl libcurl3-gnutls ca-certificates libedit2 libgmp-dev libfreetype6 libltdl7 libmcrypt4 sqlite3 libpng16-16 libzip4 libfcgi-bin libtidy5deb1 libsodium23 libonig5 cron zip",
+      "php_runtime_libs": "jq curl libcurl3-gnutls ca-certificates libedit2 libgmp-dev libfreetype6 libltdl7 libmcrypt4 sqlite3 libpng16-16 libzip4 libfcgi-bin libtidy5deb1 libsodium23 libonig5 cron zip libxml2 libxslt1.1 libssl3 zlib1g libreadline8 libicu72 libargon2-1",
       "php_build_libs": "build-essential curl dpkg-dev automake autoconf libtool file g++ gcc libc-dev make pkg-config re2c libxml2-dev libcurl4-gnutls-dev libtidy-dev libsqlite3-dev libssl-dev zlib1g-dev libpng-dev liblzf-dev libreadline6-dev libfreetype6-dev libmcrypt-dev libedit-dev libltdl-dev libxslt-dev libzip-dev libsodium-dev libonig-dev gnupg2 argon2 libargon2-0 libargon2-dev libicu-dev"
     },
     "8.3": {
       "php_version": "8.3.29",
       "base_image": "wilmadigital/php-base:bookworm-latest",
       "patch_versions": [0, 1, 2, 3],
-      "php_runtime_libs": "jq curl libcurl3-gnutls ca-certificates libedit2 libgmp-dev libfreetype6 libltdl7 libmcrypt4 sqlite3 libpng16-16 libzip4 libfcgi-bin libtidy5deb1 libsodium23 libonig5 cron zip",
+      "php_runtime_libs": "jq curl libcurl3-gnutls ca-certificates libedit2 libgmp-dev libfreetype6 libltdl7 libmcrypt4 sqlite3 libpng16-16 libzip4 libfcgi-bin libtidy5deb1 libsodium23 libonig5 cron zip libxml2 libxslt1.1 libssl3 zlib1g libreadline8 libicu72 libargon2-1",
       "php_build_libs": "build-essential curl dpkg-dev automake autoconf libtool file g++ gcc libc-dev make pkg-config re2c libxml2-dev libcurl4-gnutls-dev libtidy-dev libsqlite3-dev libssl-dev zlib1g-dev libpng-dev liblzf-dev libreadline6-dev libfreetype6-dev libmcrypt-dev libedit-dev libltdl-dev libxslt-dev libzip-dev libsodium-dev libonig-dev gnupg2 argon2 libargon2-0 libargon2-dev libicu-dev"
     },
     "8.4": {
       "php_version": "8.4.18",
       "base_image": "wilmadigital/php-base:bookworm-latest",
       "patch_versions": [0, 1, 2, 3],
-      "php_runtime_libs": "jq curl libcurl3-gnutls ca-certificates libedit2 libgmp-dev libfreetype6 libltdl7 libmcrypt4 sqlite3 libpng16-16 libzip4 libfcgi-bin libtidy5deb1 libsodium23 libonig5 cron zip",
+      "php_runtime_libs": "jq curl libcurl3-gnutls ca-certificates libedit2 libgmp-dev libfreetype6 libltdl7 libmcrypt4 sqlite3 libpng16-16 libzip4 libfcgi-bin libtidy5deb1 libsodium23 libonig5 cron zip libxml2 libxslt1.1 libssl3 zlib1g libreadline8 libicu72 libargon2-1",
       "php_build_libs": "build-essential curl dpkg-dev automake autoconf libtool file g++ gcc libc-dev make pkg-config re2c libxml2-dev libcurl4-gnutls-dev libtidy-dev libsqlite3-dev libssl-dev zlib1g-dev libpng-dev liblzf-dev libreadline6-dev libfreetype6-dev libmcrypt-dev libedit-dev libltdl-dev libxslt-dev libzip-dev libsodium-dev libonig-dev gnupg2 argon2 libargon2-0 libargon2-dev libicu-dev"
     },
     "8.5": {
       "php_version": "8.5.3",
       "base_image": "wilmadigital/php-base:trixie-latest",
       "patch_versions": [0, 1, 2, 3],
-      "php_runtime_libs": "jq curl libzip-dev libicu-dev libcurl3-gnutls ca-certificates libedit2 libgmp-dev libfreetype6 libltdl7 libmcrypt4 sqlite3 libpng16-16 libfcgi-bin libtidy-dev libsodium23 libonig5 cron zip",
+      "php_runtime_libs": "jq curl libzip-dev libicu-dev libcurl3-gnutls ca-certificates libedit2 libgmp-dev libfreetype6 libltdl7 libmcrypt4 sqlite3 libpng16-16 libfcgi-bin libtidy-dev libsodium23 libonig5 cron zip libxml2 libxslt1.1 libssl3 zlib1g libreadline8 libargon2-1",
       "php_build_libs": "build-essential curl dpkg-dev automake autoconf libtool file g++ gcc libc-dev make pkg-config re2c libxml2-dev libcurl4-gnutls-dev libtidy-dev libsqlite3-dev libssl-dev zlib1g-dev libpng-dev liblzf-dev libreadline6-dev libfreetype6-dev libmcrypt-dev libedit-dev libltdl-dev libxslt-dev libzip-dev libsodium-dev libonig-dev gnupg2 argon2 libargon2-1 libargon2-dev libicu-dev"
     }
   },
