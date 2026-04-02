@@ -45,6 +45,7 @@ RUN gnuArch="$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)"; \
         --with-config-file-scan-dir="$PHP_INI_DIR/conf.d" \
         --enable-option-checking=fatal \
         --disable-cgi \
+        --with-pear \
         --with-pdo-mysql=mysqlnd \
         --enable-mysqlnd \
         --with-mhash \
@@ -109,20 +110,16 @@ RUN curl -fsSL -o /usr/local/bin/mhsendmail \
     'https://github.com/mailhog/mhsendmail/releases/download/v0.2.0/mhsendmail_linux_amd64' && \
     chmod +x /usr/local/bin/mhsendmail
 
-# Install PHP extensions using pickle
+# Install PHP extensions using PECL
 RUN set -xe && \
     apt-get update && \
     apt-get install -y --no-install-recommends ${PHPIZE_BUILD_REQUIREMENTS} && \
-    curl -fsSL https://github.com/FriendsOfPHP/pickle/releases/latest/download/pickle.phar -o /usr/local/bin/pickle && \
-    chmod +x /usr/local/bin/pickle && \
-    pickle install imagick && \
-    pickle install redis && \
-    pickle install igbinary && \
+    pecl install imagick && \
+    pecl install redis && \
+    pecl install igbinary && \
     echo "extension=imagick.so" > /usr/local/etc/php/conf.d/20-imagick.ini && \
     echo "extension=redis.so" > /usr/local/etc/php/conf.d/20-redis.ini && \
     echo "extension=igbinary.so" > /usr/local/etc/php/conf.d/20-igbinary.ini && \
-    echo "zend_extension=opcache.so" > /usr/local/etc/php/conf.d/10-opcache.ini && \
-    rm -f /usr/local/bin/pickle && \
     apt-get purge -y --auto-remove ${PHPIZE_BUILD_REQUIREMENTS} && \
     rm -rf /var/lib/apt/lists/*
 
