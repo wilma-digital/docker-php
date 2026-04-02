@@ -32,6 +32,11 @@ on:
   schedule:
     - cron: '00 7 * * 1'
 
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
 jobs:
   build-base:
     name: "PHP ${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}"
@@ -72,6 +77,7 @@ jobs:
 
       - name: Run Trivy vulnerability scanner on php image
         uses: aquasecurity/trivy-action@master
+        continue-on-error: true
         with:
           image-ref: wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}
           format: 'sarif'
@@ -80,7 +86,7 @@ jobs:
 
       - name: Upload Trivy results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: 'trivy-results.sarif'
 
@@ -125,6 +131,7 @@ jobs:
 
       - name: Run Trivy vulnerability scanner on toolbox image
         uses: aquasecurity/trivy-action@master
+        continue-on-error: true
         with:
           image-ref: wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-toolbox
           format: 'sarif'
@@ -133,7 +140,7 @@ jobs:
 
       - name: Upload Trivy results for toolbox to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: always() && hashFiles('trivy-results-toolbox.sarif') != ''
         with:
           sarif_file: 'trivy-results-toolbox.sarif'
 
@@ -191,6 +198,7 @@ jobs:
 
       - name: Run Trivy vulnerability scanner on php+node image
         uses: aquasecurity/trivy-action@master
+        continue-on-error: true
         with:
           image-ref: wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-node${{{{ matrix.nodeVersion }}}}
           format: 'sarif'
@@ -199,7 +207,7 @@ jobs:
 
       - name: Upload Trivy results for php+node to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: always() && hashFiles('trivy-results-node.sarif') != ''
         with:
           sarif_file: 'trivy-results-node.sarif'
 
@@ -244,6 +252,7 @@ jobs:
 
       - name: Run Trivy vulnerability scanner on toolbox+node image
         uses: aquasecurity/trivy-action@master
+        continue-on-error: true
         with:
           image-ref: wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-node${{{{ matrix.nodeVersion }}}}-toolbox
           format: 'sarif'
@@ -252,7 +261,7 @@ jobs:
 
       - name: Upload Trivy results for toolbox+node to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: always() && hashFiles('trivy-results-toolbox-node.sarif') != ''
         with:
           sarif_file: 'trivy-results-toolbox-node.sarif'
 

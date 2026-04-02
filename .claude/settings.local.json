@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod:*)",
+      "Bash(python3:*)",
+      "Bash(docker build:*)",
+      "Bash(git -C \"/Users/amautz/www/03 RESSOURCEN/INFRA/docker-php\" log --oneline --all -20)",
+      "Bash(git add:*)",
+      "Bash(git rm:*)"
+    ]
+  }
+}
