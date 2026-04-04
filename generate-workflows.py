@@ -107,6 +107,7 @@ jobs:
 
       - name: Generate SBOM for php image
         uses: anchore/sbom-action@v0
+        continue-on-error: true
         with:
           image: wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}
           format: spdx-json
@@ -114,6 +115,7 @@ jobs:
 
       - name: Upload SBOM as artifact
         uses: actions/upload-artifact@v4
+        if: always() && hashFiles('sbom-php.spdx.json') != ''
         with:
           name: sbom-php-${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}
           path: sbom-php.spdx.json
@@ -161,6 +163,7 @@ jobs:
 
       - name: Generate SBOM for toolbox image
         uses: anchore/sbom-action@v0
+        continue-on-error: true
         with:
           image: wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-toolbox
           format: spdx-json
@@ -168,6 +171,7 @@ jobs:
 
       - name: Upload SBOM as artifact
         uses: actions/upload-artifact@v4
+        if: always() && hashFiles('sbom-toolbox.spdx.json') != ''
         with:
           name: sbom-toolbox-${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}
           path: sbom-toolbox.spdx.json
@@ -228,6 +232,7 @@ jobs:
 
       - name: Generate SBOM for php+node image
         uses: anchore/sbom-action@v0
+        continue-on-error: true
         with:
           image: wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-node${{{{ matrix.nodeVersion }}}}
           format: spdx-json
@@ -235,6 +240,7 @@ jobs:
 
       - name: Upload SBOM as artifact
         uses: actions/upload-artifact@v4
+        if: always() && hashFiles('sbom-node.spdx.json') != ''
         with:
           name: sbom-node-${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-node${{{{ matrix.nodeVersion }}}}
           path: sbom-node.spdx.json
@@ -282,6 +288,7 @@ jobs:
 
       - name: Generate SBOM for toolbox+node image
         uses: anchore/sbom-action@v0
+        continue-on-error: true
         with:
           image: wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-node${{{{ matrix.nodeVersion }}}}-toolbox
           format: spdx-json
@@ -289,6 +296,7 @@ jobs:
 
       - name: Upload SBOM as artifact
         uses: actions/upload-artifact@v4
+        if: always() && hashFiles('sbom-toolbox-node.spdx.json') != ''
         with:
           name: sbom-toolbox-node-${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-node${{{{ matrix.nodeVersion }}}}
           path: sbom-toolbox-node.spdx.json
