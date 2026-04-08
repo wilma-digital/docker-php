@@ -10,7 +10,11 @@
       "Bash(docker run:*)",
       "Bash(git checkout:*)",
       "Bash(tee:*)",
-      "Bash(docker logs:*)"
+      "Bash(docker logs:*)",
+      "Bash(cd:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(./generate-workflows.py:*)"
     ]
   }
 }

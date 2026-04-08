@@ -104,6 +104,7 @@ jobs:
         if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: 'trivy-results.sarif'
+          category: 'trivy-php-${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}'
 
       - name: Generate SBOM for php image
         uses: anchore/sbom-action@v0
@@ -160,6 +161,7 @@ jobs:
         if: always() && hashFiles('trivy-results-toolbox.sarif') != ''
         with:
           sarif_file: 'trivy-results-toolbox.sarif'
+          category: 'trivy-toolbox-${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}'
 
       - name: Generate SBOM for toolbox image
         uses: anchore/sbom-action@v0
@@ -229,6 +231,7 @@ jobs:
         if: always() && hashFiles('trivy-results-node.sarif') != ''
         with:
           sarif_file: 'trivy-results-node.sarif'
+          category: 'trivy-node-${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-node${{{{ matrix.nodeVersion }}}}'
 
       - name: Generate SBOM for php+node image
         uses: anchore/sbom-action@v0
@@ -285,6 +288,7 @@ jobs:
         if: always() && hashFiles('trivy-results-toolbox-node.sarif') != ''
         with:
           sarif_file: 'trivy-results-toolbox-node.sarif'
+          category: 'trivy-toolbox-node-${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-node${{{{ matrix.nodeVersion }}}}'
 
       - name: Generate SBOM for toolbox+node image
         uses: anchore/sbom-action@v0
