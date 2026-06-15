@@ -13,11 +13,12 @@ This repository contains Docker images for OpenMage PHP containers with automate
 The repository uses a **template-based system** to eliminate duplication:
 
 ```
-├── Dockerfile.template      # Single source of truth for all Dockerfiles
-├── versions.json            # Version configuration (PHP + Node.js)
-├── generate-dockerfiles.py  # Generates version-specific Dockerfiles
-├── generate-workflows.py    # Generates GitHub Actions workflows
-├── check-php-releases.py    # Automated PHP release detection
+├── Dockerfile.template       # Source of truth for the base php/toolbox images (compiles PHP)
+├── Dockerfile.node.template  # Source of truth for the Node.js variants (layers Node on the php image)
+├── versions.json             # Version configuration (PHP + Node.js)
+├── generate-dockerfiles.py   # Generates version-specific Dockerfiles
+├── generate-workflows.py     # Generates GitHub Actions workflows
+├── check-php-releases.py     # Automated PHP release detection
 └── src/
     ├── 8.1/
     │   ├── src/             # PHP 8.1 base
@@ -30,11 +31,11 @@ The repository uses a **template-based system** to eliminate duplication:
     └── 8.5/
 ```
 
-**Key Principle**: Never edit Dockerfiles directly - always edit `Dockerfile.template` and regenerate.
+**Key Principle**: Never edit Dockerfiles directly - always edit the appropriate template (`Dockerfile.template` for base images, `Dockerfile.node.template` for Node variants) and regenerate.
 
 ### Multi-Stage Build
 
-Each Dockerfile uses an optimized 3-stage build:
+**Base images** (`Dockerfile.template`) use an optimized 3-stage build:
 
 1. **Builder Stage**: Compiles PHP from source with optimized flags
    - Isolated build dependencies
@@ -52,6 +53,15 @@ Each Dockerfile uses an optimized 3-stage build:
    - Additional tools: git, redis-tools, mariadb-client, deployer, rclone
    - Composer 1 (legacy support)
    - xdebug with coverage mode
+
+**Node.js variants** (`Dockerfile.node.template`) do **not** recompile PHP. Each variant
+layers Node.js (via the NodeSource APT repo) directly on top of the already-built base
+images: the `php` target is `FROM wilmadigital/php:${PHP_VERSION}` and the `toolbox` target
+is `FROM wilmadigital/php:${PHP_VERSION}-toolbox`. PHP is therefore compiled exactly once
+(in the base image) and reused across all Node.js variants. The variant Dockerfile needs no
+PHP source, no `FS/` (php.ini is baked into the base image) and only the Dockerfile as build
+context. Because of this dependency, CI builds the base images first (`build-node` declares
+`needs: build-base`).
 
 ### Base Image Matrix
 
@@ -91,6 +101,8 @@ Edit `versions.json` to add/modify PHP versions or Node.js variants:
   "node_versions": [22, 24, 25]
 }
 ```
+
+With patch_versions being the latest 5 minor Release versions from https://www.php.net/releases/ for maintained versions and latst 3 versions from EOL versions.
 
 ### Regenerating Build Files
 
@@ -174,6 +186,16 @@ docker build --target toolbox -t wilmadigital/php:8.5.1-toolbox .
 - `wilmadigital/php:8.5.1-node25` - PHP 8.5.1 + Node.js 25
 - `wilmadigital/php:8.5.1-node22-toolbox` - With development tools
 
+**Rolling major.minor tags** (always point to the highest patch built for that minor):
+- `wilmadigital/php:8.5` - latest 8.5.x runtime
+- `wilmadigital/php:8.5-toolbox` - latest 8.5.x toolbox
+- `wilmadigital/php:8.5-node22` - latest 8.5.x + Node.js 22
+- `wilmadigital/php:8.5-node22-toolbox` - latest 8.5.x + Node.js 22 + tools
+
+Downstream projects should pin the rolling `8.5` (etc.) tag to pick up patch releases
+automatically without editing anything. The rolling tag is published only by the build for
+the highest patch in `versions.json` → `patch_versions`.
+
 ## GitHub Actions Workflows
 
 ### Version-Specific Workflows
@@ -182,7 +204,9 @@ Each PHP version has a workflow (`.github/workflows/php-8.X.yml`):
 
 **Two build jobs**:
 1. `build-base`: Builds PHP-only images (php + toolbox)
-2. `build-node`: Builds Node.js variants (3 versions × 2 targets = 6 images)
+2. `build-node`: Builds Node.js variants (3 versions × 2 targets = 6 images). Runs **after**
+   `build-base` (`needs: build-base`) because the variants layer on the freshly pushed
+   `wilmadigital/php:<patch>` images rather than recompiling PHP.
 
 **Total images per PHP version**: 8 (2 base + 6 Node.js variants)
 

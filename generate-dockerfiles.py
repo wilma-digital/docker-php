@@ -30,34 +30,8 @@ def substitute_template(template: str, variables: dict) -> str:
     return result
 
 
-def add_nodejs_support(dockerfile: str, node_version: int) -> str:
-    """Add Node.js installation to Dockerfile."""
-    # Add Node.js installation after runtime dependencies in php stage
-    # Using new NodeSource repository method (2023+)
-    nodejs_install = f"""
-# Install Node.js {node_version}
-RUN apt-get update && \\
-    apt-get install -y ca-certificates curl gnupg && \\
-    mkdir -p /etc/apt/keyrings && \\
-    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \\
-    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_{node_version}.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list && \\
-    apt-get update && \\
-    apt-get install -y nodejs && \\
-    apt-get clean && \\
-    rm -rf /var/lib/apt/lists/*
-"""
-
-    # Insert after mhsendmail installation (only exists in runtime stage)
-    insert_after = "chmod +x /usr/local/bin/mhsendmail"
-    parts = dockerfile.split(insert_after, 1)
-
-    if len(parts) == 2:
-        return parts[0] + insert_after + nodejs_install + parts[1]
-    return dockerfile
-
-
-def generate_dockerfile(template: str, php_version: str, config: dict, node_version: int = None) -> str:
-    """Generate a version-specific Dockerfile."""
+def generate_dockerfile(template: str, php_version: str, config: dict) -> str:
+    """Generate the base (PHP-only) Dockerfile from the compile template."""
     variables = {
         'PHP_VERSION': config['php_version'],
         'BASE_IMAGE': config['base_image'],
@@ -65,22 +39,37 @@ def generate_dockerfile(template: str, php_version: str, config: dict, node_vers
         'PHP_BUILD_LIBS': config['php_build_libs']
     }
 
-    dockerfile = substitute_template(template, variables)
+    return substitute_template(template, variables)
 
-    if node_version:
-        dockerfile = add_nodejs_support(dockerfile, node_version)
 
-    return dockerfile
+def generate_node_dockerfile(node_template: str, config: dict, node_version: int) -> str:
+    """Generate a Node.js variant Dockerfile.
+
+    Node variants do NOT recompile PHP. They layer Node.js on top of the
+    prebuilt wilmadigital/php:${PHP_VERSION} image, so PHP is compiled exactly
+    once (in the base image) and reused across every Node.js variant.
+    """
+    variables = {
+        'PHP_VERSION': config['php_version'],
+        'NODE_VERSION': node_version,
+    }
+
+    return substitute_template(node_template, variables)
 
 
 def main():
     """Main function."""
     script_dir = Path(__file__).parent
     template_path = script_dir / 'Dockerfile.template'
+    node_template_path = script_dir / 'Dockerfile.node.template'
     versions_path = script_dir / 'versions.json'
 
     if not template_path.exists():
         print(f"Error: Template not found at {template_path}", file=sys.stderr)
+        sys.exit(1)
+
+    if not node_template_path.exists():
+        print(f"Error: Node template not found at {node_template_path}", file=sys.stderr)
         sys.exit(1)
 
     if not versions_path.exists():
@@ -88,6 +77,7 @@ def main():
         sys.exit(1)
 
     template = load_template(template_path)
+    node_template = load_template(node_template_path)
     config = load_versions(versions_path)
 
     versions = config['versions']
@@ -108,22 +98,25 @@ def main():
 
         print(f"✓ Generated {dockerfile_path}")
 
-        # Generate Node.js variants
+        # Generate Node.js variants.
+        # These layer Node.js on the prebuilt php image and need no PHP source,
+        # php.ini (FS/) or build context beyond the Dockerfile itself.
         if node_versions:
             for node_version in node_versions:
                 node_dir = script_dir / 'src' / php_version / f'node{node_version}' / 'src'
                 node_dir.mkdir(parents=True, exist_ok=True)
                 node_dockerfile_path = node_dir / 'Dockerfile'
 
-                # Copy FS directory if it doesn't exist
-                fs_source = dockerfile_dir / 'FS'
+                # Remove any stale FS/ left over from the old compile-based
+                # node variants - it is baked into the base php image now.
+                # Best-effort: a leftover FS/ is unused, so never fail the run.
                 fs_target = node_dir / 'FS'
-
-                if fs_source.exists() and not fs_target.exists():
+                if fs_target.exists():
                     import shutil
-                    shutil.copytree(fs_source, fs_target)
+                    shutil.rmtree(fs_target, ignore_errors=True)
 
-                dockerfile_content = generate_dockerfile(template, php_version, version_config, node_version)
+                dockerfile_content = generate_node_dockerfile(
+                    node_template, version_config, node_version)
 
                 with open(node_dockerfile_path, 'w') as f:
                     f.write(dockerfile_content)

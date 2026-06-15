@@ -9,14 +9,14 @@
 # Requires:  wilmadigital/php:${PHP_VERSION} and wilmadigital/php:${PHP_VERSION}-toolbox
 #            to be built/pushed first (CI: build-node needs build-base).
 
-ARG PHP_VERSION="8.3.29"
+ARG PHP_VERSION="{{PHP_VERSION}}"
 
 # ---------------------------------------------------------------------------
 # php + node  (runtime)
 # ---------------------------------------------------------------------------
 FROM wilmadigital/php:${PHP_VERSION} AS php
 
-ARG NODE_VERSION="22"
+ARG NODE_VERSION="{{NODE_VERSION}}"
 SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
 
 # Install Node.js via the NodeSource APT repository
@@ -38,7 +38,7 @@ RUN apt-get update && \
 # ---------------------------------------------------------------------------
 FROM wilmadigital/php:${PHP_VERSION}-toolbox AS toolbox
 
-ARG NODE_VERSION="22"
+ARG NODE_VERSION="{{NODE_VERSION}}"
 SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
 
 # Install Node.js via the NodeSource APT repository

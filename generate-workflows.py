@@ -17,6 +17,9 @@ def generate_workflow(version: str, patch_versions: list, node_versions: list) -
     """Generate workflow file content."""
     patch_str = ', '.join(str(p) for p in patch_versions)
     node_str = ', '.join(str(n) for n in node_versions)
+    # The highest patch publishes the rolling major.minor tags (e.g. 8.5),
+    # so downstream consumers can pin "8.5" and pick up patches automatically.
+    latest_patch = max(patch_versions)
 
     # Stagger schedule times to avoid Docker Hub rate limits
     schedule_times = {
@@ -38,6 +41,7 @@ on:
       - 'src/{version}/**'
       - '.github/workflows/php-{version}.yml'
       - 'Dockerfile.template'
+      - 'Dockerfile.node.template'
       - 'versions.json'
   schedule:
     - cron: '{cron_time}'
@@ -81,7 +85,9 @@ jobs:
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}
+          tags: |
+            wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}
+            ${{{{ matrix.patchVersion == {latest_patch} && format('wilmadigital/php:{{0}}', matrix.version) || '' }}}}
           context: ./src/${{{{ matrix.version }}}}/src
           file: ./src/${{{{ matrix.version }}}}/src/Dockerfile
           target: php
@@ -138,7 +144,9 @@ jobs:
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-toolbox
+          tags: |
+            wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-toolbox
+            ${{{{ matrix.patchVersion == {latest_patch} && format('wilmadigital/php:{{0}}-toolbox', matrix.version) || '' }}}}
           context: ./src/${{{{ matrix.version }}}}/src
           file: ./src/${{{{ matrix.version }}}}/src/Dockerfile
           target: toolbox
@@ -182,6 +190,8 @@ jobs:
   build-node:
     name: "PHP ${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}} + Node ${{{{ matrix.nodeVersion }}}}"
     runs-on: ubuntu-latest
+    # Node variants layer on the prebuilt php image, so the base must exist first.
+    needs: build-base
     strategy:
       matrix:
         version: ['{version}']
@@ -208,12 +218,15 @@ jobs:
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-node${{{{ matrix.nodeVersion }}}}
+          tags: |
+            wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-node${{{{ matrix.nodeVersion }}}}
+            ${{{{ matrix.patchVersion == {latest_patch} && format('wilmadigital/php:{{0}}-node{{1}}', matrix.version, matrix.nodeVersion) || '' }}}}
           context: ./src/${{{{ matrix.version }}}}/node${{{{ matrix.nodeVersion }}}}/src
           file: ./src/${{{{ matrix.version }}}}/node${{{{ matrix.nodeVersion }}}}/src/Dockerfile
           target: php
           build-args: |
             PHP_VERSION=${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}
+            NODE_VERSION=${{{{ matrix.nodeVersion }}}}
           cache-from: type=gha,scope=node-${{{{ matrix.version }}}}-${{{{ matrix.patchVersion }}}}-${{{{ matrix.nodeVersion }}}}
           cache-to: type=gha,mode=max,scope=node-${{{{ matrix.version }}}}-${{{{ matrix.patchVersion }}}}-${{{{ matrix.nodeVersion }}}}
 
@@ -265,12 +278,15 @@ jobs:
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-node${{{{ matrix.nodeVersion }}}}-toolbox
+          tags: |
+            wilmadigital/php:${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}-node${{{{ matrix.nodeVersion }}}}-toolbox
+            ${{{{ matrix.patchVersion == {latest_patch} && format('wilmadigital/php:{{0}}-node{{1}}-toolbox', matrix.version, matrix.nodeVersion) || '' }}}}
           context: ./src/${{{{ matrix.version }}}}/node${{{{ matrix.nodeVersion }}}}/src
           file: ./src/${{{{ matrix.version }}}}/node${{{{ matrix.nodeVersion }}}}/src/Dockerfile
           target: toolbox
           build-args: |
             PHP_VERSION=${{{{ matrix.version }}}}.${{{{ matrix.patchVersion }}}}
+            NODE_VERSION=${{{{ matrix.nodeVersion }}}}
           cache-from: type=gha,scope=toolbox-node-${{{{ matrix.version }}}}-${{{{ matrix.patchVersion }}}}-${{{{ matrix.nodeVersion }}}}
           cache-to: type=gha,mode=max,scope=toolbox-node-${{{{ matrix.version }}}}-${{{{ matrix.patchVersion }}}}-${{{{ matrix.nodeVersion }}}}
 

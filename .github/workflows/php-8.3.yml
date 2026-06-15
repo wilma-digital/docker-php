@@ -8,6 +8,7 @@ on:
       - 'src/8.3/**'
       - '.github/workflows/php-8.3.yml'
       - 'Dockerfile.template'
+      - 'Dockerfile.node.template'
       - 'versions.json'
   schedule:
     - cron: '00 8 * * 1'
@@ -29,7 +30,7 @@ jobs:
     strategy:
       matrix:
         version: ['8.3']
-        patchVersion: [0, 1, 2, 3]
+        patchVersion: [26, 27, 28, 29, 30]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,7 +52,9 @@ jobs:
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}
+          tags: |
+            wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}
+            ${{ matrix.patchVersion == 3 && format('wilmadigital/php:{0}', matrix.version) || '' }}
           context: ./src/${{ matrix.version }}/src
           file: ./src/${{ matrix.version }}/src/Dockerfile
           target: php
@@ -108,7 +111,9 @@ jobs:
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-toolbox
+          tags: |
+            wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-toolbox
+            ${{ matrix.patchVersion == 3 && format('wilmadigital/php:{0}-toolbox', matrix.version) || '' }}
           context: ./src/${{ matrix.version }}/src
           file: ./src/${{ matrix.version }}/src/Dockerfile
           target: toolbox
@@ -152,6 +157,8 @@ jobs:
   build-node:
     name: "PHP ${{ matrix.version }}.${{ matrix.patchVersion }} + Node ${{ matrix.nodeVersion }}"
     runs-on: ubuntu-latest
+    # Node variants layer on the prebuilt php image, so the base must exist first.
+    needs: build-base
     strategy:
       matrix:
         version: ['8.3']
@@ -178,12 +185,15 @@ jobs:
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}
+          tags: |
+            wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}
+            ${{ matrix.patchVersion == 3 && format('wilmadigital/php:{0}-node{1}', matrix.version, matrix.nodeVersion) || '' }}
           context: ./src/${{ matrix.version }}/node${{ matrix.nodeVersion }}/src
           file: ./src/${{ matrix.version }}/node${{ matrix.nodeVersion }}/src/Dockerfile
           target: php
           build-args: |
             PHP_VERSION=${{ matrix.version }}.${{ matrix.patchVersion }}
+            NODE_VERSION=${{ matrix.nodeVersion }}
           cache-from: type=gha,scope=node-${{ matrix.version }}-${{ matrix.patchVersion }}-${{ matrix.nodeVersion }}
           cache-to: type=gha,mode=max,scope=node-${{ matrix.version }}-${{ matrix.patchVersion }}-${{ matrix.nodeVersion }}
 
@@ -235,12 +245,15 @@ jobs:
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}-toolbox
+          tags: |
+            wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}-toolbox
+            ${{ matrix.patchVersion == 3 && format('wilmadigital/php:{0}-node{1}-toolbox', matrix.version, matrix.nodeVersion) || '' }}
           context: ./src/${{ matrix.version }}/node${{ matrix.nodeVersion }}/src
           file: ./src/${{ matrix.version }}/node${{ matrix.nodeVersion }}/src/Dockerfile
           target: toolbox
           build-args: |
             PHP_VERSION=${{ matrix.version }}.${{ matrix.patchVersion }}
+            NODE_VERSION=${{ matrix.nodeVersion }}
           cache-from: type=gha,scope=toolbox-node-${{ matrix.version }}-${{ matrix.patchVersion }}-${{ matrix.nodeVersion }}
           cache-to: type=gha,mode=max,scope=toolbox-node-${{ matrix.version }}-${{ matrix.patchVersion }}-${{ matrix.nodeVersion }}
 
