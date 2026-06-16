@@ -183,15 +183,23 @@ ARG TOOLBOX_RUNTIME_REQUIREMENTS_EXTRA=""
 
 SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
 
-# Install development tools including Composer 1 (legacy support)
+# Install development tools.
+# Composer 1 is EOL (last release 1.10.27) and only runs on PHP < 8.5; on PHP
+# 8.5+ it fatals (exit 255) and aborts the build. It is therefore installed
+# only on compatible PHP versions, decided at build time from the compiled
+# PHP. Composer 2 and deployer remain available on every version.
 RUN /usr/local/bin/docker-install-requirements toolbox && \
     apt-get update && \
     apt-get install -y --no-install-recommends ${TOOLBOX_RUNTIME_REQUIREMENTS} ${TOOLBOX_RUNTIME_REQUIREMENTS_EXTRA} && \
     rm -rf /var/lib/apt/lists/* && \
     curl https://rclone.org/install.sh | bash && \
-    docker-package-download -o /usr/local/bin/composer1 https://getcomposer.org/composer-1.phar && \
-    chmod +x /usr/local/bin/composer1 && \
-    composer1 selfupdate && \
+    if php -r 'exit(version_compare(PHP_VERSION, "8.5.0", "<") ? 0 : 1);'; then \
+        docker-package-download -o /usr/local/bin/composer1 https://getcomposer.org/composer-1.phar && \
+        chmod +x /usr/local/bin/composer1 && \
+        composer1 selfupdate; \
+    else \
+        echo "Skipping Composer 1: not supported on PHP ${PHP_VERSION} (EOL, requires PHP < 8.5)"; \
+    fi && \
     composer require deployer/deployer && \
     composer update && \
     echo "export PATH=$PATH:/var/www/html/vendor/bin" >> /etc/profile && \
