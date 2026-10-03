@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+
+set -o errexit  # Exit script when a command exits with non-zero status
+set -o errtrace # Exit on error inside any functions or sub-shells
+set -o nounset  # Exit script on use of an undefined variable
+set -o pipefail # Return exit status of the last command in the pipe that failed
+
+readonly EX_OK=0                # Successful termination
+readonly EX_UNKNOWN=1           # Unknown error occured
+
+declare CLEANUP_LOG_FILES=true
+declare CLEANUP_TMP_FOLDERS=true
+declare CLEANUP_APT=true
+declare CLEANUP_PIP=true
+
+# ------------------------------------------------------------------------------
+# Displays a error message and is able to terminate te script execution
+#
+# Arguments:
+#   $1 Error message
+#   $2 Exit code, script will continue execution when omitted
+# Returns:
+#   None
+# ------------------------------------------------------------------------------
+display_error_message() {
+  local status=${1}
+  local exitcode=${2:-0}
+
+  echo >&2
+  echo " !     ERROR: ${status}"
+  echo >&2
+
+  if [[ ${exitcode} -ne 0 ]]; then
+    exit "${exitcode}"
+  fi
+}
+
+# ------------------------------------------------------------------------------
+# Displays a notice
+#
+# Arguments:
+#   $* Notice message to display
+# Returns:
+#   Exit code
+# ------------------------------------------------------------------------------
+display_notice_message() {
+  local status=$*
+
+  echo
+  echo "NOTICE: ${status}"
+  echo
+}
+
+# ------------------------------------------------------------------------------
+# Displays a status message
+#
+# Arguments:
+#   $* Status message to display
+# Returns:
+#   Exit code
+# ------------------------------------------------------------------------------
+display_status_message() {
+  local status=$*
+
+  echo "-----> ${status}"
+}
+
+# ------------------------------------------------------------------------------
+# Docker build the image
+#
+# Arguments:
+#   None
+# Returns:
+#   Exit code
+# ------------------------------------------------------------------------------
+docker_clean() {
+    display_status_message "Running Docker clean"
+
+    cd /
+
+    if [[ "${CLEANUP_LOG_FILES}" = true ]]; then
+        find /var/log -type f -print0 | xargs -0 truncate -s0
+    fi
+
+    if [[ "${CLEANUP_APT}" = true ]]; then
+        apt-get autoremove --purge --yes --quiet;
+        apt-get clean -y
+    fi
+
+    if [[ "${CLEANUP_PIP}" = true && -d "${HOME}/.cache/pip" ]]; then
+        rm -rf "${HOME}/.cache/pip"
+    fi
+
+    if [[ "${CLEANUP_TMP_FOLDERS}" = true ]]; then
+        find /tmp/ -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+        find /var/tmp/ -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    fi
+
+    rm -rf /var/lib/apt/lists/*
+    rm -rf /usr/share/doc/*
+    rm -rf /usr/share/groff/*
+    rm -rf /usr/share/info/*
+    rm -rf /usr/share/linda/*
+    rm -rf /usr/share/lintian/*
+    rm -rf /usr/share/man/*/*
+
+    display_status_message 'Docker clean finished'
+
+    return "${EX_OK}"
+}
+
+display_help () {
+    local exit_code=${1:-${EX_OK}}
+    local status=${2:-}
+
+    [[ -n "${status}" ]] && display_error_message "${status}"
+
+    cat << EOF
+Usage: /usr/local/bin/docker-layer-clean [options]
+Options:
+    -h, Display this help and exit.
+    -l, Do not truncate logfiles
+    -p, Do not remove *-dev packages
+    -a, Do not cleanup apt
+    -t, Do not cleanup tmp folders
+    -p, Do not cleanup python pip cache
+EOF
+
+    exit "${exit_code}"
+}
+
+parse_cli_arguments() {
+    local OPTIND o
+    while getopts ":hlpat" o; do
+        case "${o}" in
+            l)
+                CLEANUP_LOG_FILES=false
+                ;;
+            t)
+                CLEANUP_TMP_FOLDERS=false
+                ;;
+            a)
+                CLEANUP_APT=false
+                ;;
+            p)
+                CLEANUP_PIP=false
+                ;;
+            h)
+                display_help "${EX_OK}"
+                ;;
+            :)
+                display_help "${EX_UNKNOWN}" "Option -${OPTARG} requires an argument";
+            ;;
+            \?)
+                display_help "${EX_UNKNOWN}" "Invalid option: -${OPTARG}";
+            ;;
+            *)
+                display_help "${EX_UNKNOWN}" "Missing required arguments.";
+                ;;
+        esac
+    done
+    shift $((OPTIND-1))
+}
+
+# ==============================================================================
+# RUN LOGIC
+# ------------------------------------------------------------------------------
+main() {
+    # Parse input
+    parse_cli_arguments "$@"
+    docker_clean
+    exit "${EX_OK}"
+}
+
+# Bootstrap
+if [[ "${BASH_SOURCE[0]}" = "${0}" ]]; then
+    # Direct call to file
+    main "$@"
+fi  # Else file is included from another script

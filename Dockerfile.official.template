@@ -1,0 +1,136 @@
+# OpenMage PHP Container - Template (official php base)
+# GENERATED FILES ARE DERIVED FROM THIS TEMPLATE - edit the template, not the output.
+#
+# Unlike Dockerfile.template this does NOT compile PHP. It starts from the
+# official php:X.Y.Z-fpm-<debian> image (every patch tagged, multi-arch,
+# upstream security fixes) and adds extensions with install-php-extensions,
+# which also pulls the matching runtime libraries and removes build deps.
+#
+# Variables: PHP_VERSION, DEBIAN_CODENAME
+
+ARG PHP_VERSION="{{PHP_VERSION}}"
+
+FROM mlocati/php-extension-installer:2.12 AS installer
+
+# ---------------------------------------------------------------------------
+# php  (fpm runtime)
+# ---------------------------------------------------------------------------
+FROM php:${PHP_VERSION}-fpm-{{DEBIAN_CODENAME}} AS php
+
+# Pinned PECL extension versions for reproducible builds (latest stable).
+ARG IMAGICK_VERSION="3.8.1"
+ARG REDIS_VERSION="6.3.0"
+# 3.2.16 does not compile on PHP 8.5 (php_smart_string.h removed); 3.2.17RC1 does.
+ARG IGBINARY_VERSION="3.2.17RC1"
+ARG APCU_VERSION="5.1.28"
+ARG PHP_RUNTIME_REQUIREMENTS="jq curl patch unzip zip cron gosu less procps iputils-ping iproute2 libfcgi-bin"
+ARG PHP_RUNTIME_REQUIREMENTS_EXTRA=""
+
+ENV DOCUMENT_ROOT="/var/www/html" \
+    DEBIAN_FRONTEND=noninteractive
+
+SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
+
+COPY --from=installer /usr/bin/install-php-extensions /usr/local/bin/
+COPY FS /
+
+# Runtime tools and PHP extensions. `patch` is required by composer-patches
+# (see CLAUDE.md), so it must never be dropped from the runtime requirements.
+# hadolint ignore=DL3008,DL3009
+RUN set -xe && \
+    chmod 755 /usr/local/bin/docker-entrypoint /usr/local/bin/docker-layer-clean \
+        /usr/local/bin/docker-fpm-healthcheck /usr/local/bin/phpgosu && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends ${PHP_RUNTIME_REQUIREMENTS} ${PHP_RUNTIME_REQUIREMENTS_EXTRA} && \
+    install-php-extensions \
+        bcmath bz2 exif ftp gd gmp intl mysqli opcache pcntl pdo_mysql soap sockets tidy xsl zip \
+        "imagick-${IMAGICK_VERSION}" \
+        "igbinary-${IGBINARY_VERSION}" \
+        "redis-${REDIS_VERSION}" \
+        "apcu-${APCU_VERSION}" && \
+    mkdir -p /home/www-data && \
+    chown www-data:www-data /home/www-data && \
+    chmod 711 /home/www-data && \
+    usermod -d /home/www-data www-data && \
+    /usr/local/bin/docker-layer-clean
+
+# Install mhsendmail (dev SMTP shim). Upstream ships an amd64 binary only, and it
+# is not wired into php.ini, so install it on amd64 and skip it elsewhere rather
+# than baking a non-runnable amd64 binary into the arm64 image.
+ARG TARGETARCH
+RUN if [ "${TARGETARCH}" = "amd64" ]; then \
+        curl -fsSL -o /usr/local/bin/mhsendmail \
+            'https://github.com/mailhog/mhsendmail/releases/download/v0.2.0/mhsendmail_linux_amd64' && \
+        chmod +x /usr/local/bin/mhsendmail; \
+    else \
+        echo "Skipping mhsendmail: no upstream binary for ${TARGETARCH}"; \
+    fi
+
+# PHP-FPM pool settings on top of the official docker.conf / zz-docker.conf.
+RUN { \
+        echo '[global]'; \
+        echo 'daemonize = no'; \
+        echo; \
+        echo '[www]'; \
+        echo 'listen = 9000'; \
+        echo 'pm.max_children = 10'; \
+        echo 'pm.min_spare_servers = 2'; \
+        echo 'pm.max_spare_servers = 5'; \
+        echo 'pm.status_path = /status'; \
+    } > /usr/local/etc/php-fpm.d/zz-docker.conf
+
+# Install Composer 2 and Magento tools.
+# Use the stable composer.phar URL rather than the unauthenticated GitHub API,
+# which is rate-limited (shared runner IPs) and non-reproducible across the matrix.
+RUN set -xe && \
+    curl -fsSL --retry 5 -o /usr/local/bin/composer https://getcomposer.org/download/latest-stable/composer.phar && \
+    curl -fsSL --retry 5 -o /usr/local/bin/magerun https://files.magerun.net/n98-magerun.phar && \
+    curl -fsSL --retry 5 -o /usr/local/bin/magerun2 https://files.magerun.net/n98-magerun2.phar && \
+    chmod +x /usr/local/bin/composer /usr/local/bin/magerun /usr/local/bin/magerun2 && \
+    mkdir -p /var/www/html && \
+    chown -R www-data:www-data /var/www/html && \
+    chmod -R 755 /var/www/html
+
+WORKDIR /var/www/html
+
+# Health check for PHP-FPM status endpoint
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD ["/bin/sh", "-c", "pgrep -f 'php-fpm: master process' > /dev/null || exit 1"]
+
+ENTRYPOINT ["docker-entrypoint"]
+CMD ["php-fpm"]
+EXPOSE 9000
+
+# ---------------------------------------------------------------------------
+# toolbox  (CI / development tools)
+# ---------------------------------------------------------------------------
+FROM php AS toolbox
+
+ARG XDEBUG_VERSION="3.5.3"
+ARG PCOV_VERSION="1.0.12"
+ARG DEPLOYER_VERSION="^7.0"
+ARG TOOLBOX_RUNTIME_REQUIREMENTS="git redis-tools mariadb-client percona-toolkit rsync openssh-client vim.tiny"
+ARG TOOLBOX_RUNTIME_REQUIREMENTS_EXTRA=""
+
+# Global composer home so tools like deployer are installed once, on PATH, and
+# never pollute the application working directory (/var/www/html).
+ENV COMPOSER_HOME="/usr/local/composer"
+
+# Xdebug and pcov are built against this PHP (PECL), not taken from Debian's
+# php-xdebug, which would drag in a second PHP. Both are installed but OFF by
+# default; enable per job with PHP_EXT_ENABLE=xdebug (or pcov), handled by
+# docker-entrypoint, or `docker-php-ext-enable xdebug` in a CI script.
+# hadolint ignore=DL3008,DL3009,DL4006
+RUN set -xe && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends ${TOOLBOX_RUNTIME_REQUIREMENTS} ${TOOLBOX_RUNTIME_REQUIREMENTS_EXTRA} && \
+    install-php-extensions "xdebug-${XDEBUG_VERSION}" "pcov-${PCOV_VERSION}" && \
+    rm -f "${PHP_INI_DIR}/conf.d/docker-php-ext-xdebug.ini" "${PHP_INI_DIR}/conf.d/docker-php-ext-pcov.ini" && \
+    echo "xdebug.mode=coverage" > "${PHP_INI_DIR}/conf.d/xdebug-coverage.ini" && \
+    curl -fsSL https://rclone.org/install.sh | bash && \
+    composer global require "deployer/deployer:${DEPLOYER_VERSION}" && \
+    ln -sf "${COMPOSER_HOME}/vendor/bin/dep" /usr/local/bin/dep && \
+    echo "export PATH=\$PATH:${COMPOSER_HOME}/vendor/bin:/var/www/html/vendor/bin" >> /etc/profile && \
+    /usr/local/bin/docker-layer-clean
+
+CMD ["php", "-a"]
