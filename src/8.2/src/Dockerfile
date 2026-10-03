@@ -2,10 +2,10 @@
 # This template is used to generate version-specific Dockerfiles
 # Variables: PHP_VERSION, BASE_IMAGE, PHP_RUNTIME_LIBS, PHP_BUILD_LIBS
 
-FROM wilmadigital/php-base:bookworm-latest AS builder
+FROM wilmadigital/php-base:bookworm-latest@sha256:e8d075f0891e77470a2b800137bcc319a95b17c8e3ff43ddbbd0c61ef5f377ba AS builder
 
 # Build arguments
-ARG PHP_VERSION="8.2.30"
+ARG PHP_VERSION="8.2.32"
 ARG PHP_BUILD_REQUIREMENTS="build-essential curl dpkg-dev automake autoconf libtool file g++ gcc libc-dev make pkg-config re2c libxml2-dev libcurl4-gnutls-dev libtidy-dev libsqlite3-dev libssl-dev zlib1g-dev libpng-dev liblzf-dev libreadline6-dev libfreetype6-dev libmcrypt-dev libedit-dev libltdl-dev libxslt-dev libzip-dev libsodium-dev libonig-dev gnupg2 argon2 libargon2-0 libargon2-dev libicu-dev"
 ARG PHP_BUILD_REQUIREMENTS_EXTRA=""
 
@@ -75,20 +75,22 @@ RUN gnuArch="$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)"; \
     rm -rf /usr/src/php
 
 # Runtime stage
-FROM wilmadigital/php-base:bookworm-latest AS php
+FROM wilmadigital/php-base:bookworm-latest@sha256:e8d075f0891e77470a2b800137bcc319a95b17c8e3ff43ddbbd0c61ef5f377ba AS php
 
 COPY FS /
 
-ARG PHP_VERSION="8.2.30"
-ARG PHP_RUNTIME_REQUIREMENTS="jq curl libcurl3-gnutls ca-certificates libedit2 libgmp-dev libfreetype6 libltdl7 libmcrypt4 sqlite3 libpng16-16 libzip4 libfcgi-bin libtidy5deb1 libsodium23 libonig5 cron zip libxml2 libxslt1.1 libssl3 zlib1g libreadline8 libicu72 libargon2-1"
+ARG PHP_VERSION="8.2.32"
+ARG PHP_RUNTIME_REQUIREMENTS="jq curl patch libcurl3-gnutls ca-certificates libedit2 libgmp-dev libfreetype6 libltdl7 libmcrypt4 sqlite3 libpng16-16 libzip4 libfcgi-bin libtidy5deb1 libsodium23 libonig5 cron zip libxml2 libxslt1.1 libssl3 zlib1g libreadline8 libicu72 libargon2-1"
 ARG PHP_RUNTIME_REQUIREMENTS_EXTRA=""
-ARG IMAGICK_VERSION="3.8.0"
+# Pinned PECL extension versions for reproducible builds (latest stable).
+ARG IMAGICK_VERSION="3.8.1"
+ARG REDIS_VERSION="6.3.0"
+ARG IGBINARY_VERSION="3.2.16"
 
 ENV PHP_INI_DIR="/usr/local/etc/php" \
     PHP_VERSION="${PHP_VERSION}" \
     PHPIZE_BUILD_REQUIREMENTS="build-essential automake autoconf libtool file g++ gcc libc-dev make pkg-config re2c libltdl-dev" \
-    DOCUMENT_ROOT="/var/www/html" \
-    IMAGICK_VERSION="${IMAGICK_VERSION}"
+    DOCUMENT_ROOT="/var/www/html"
 
 SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
 
@@ -105,18 +107,25 @@ RUN set -xe && \
     apt-get install -y --no-install-recommends ${PHP_RUNTIME_REQUIREMENTS} ${PHP_RUNTIME_REQUIREMENTS_EXTRA} && \
     rm -rf /var/lib/apt/lists/*
 
-# Install mhsendmail
-RUN curl -fsSL -o /usr/local/bin/mhsendmail \
-    'https://github.com/mailhog/mhsendmail/releases/download/v0.2.0/mhsendmail_linux_amd64' && \
-    chmod +x /usr/local/bin/mhsendmail
+# Install mhsendmail (dev SMTP shim). Upstream ships an amd64 binary only, and it
+# is not wired into php.ini, so install it on amd64 and skip it elsewhere rather
+# than baking a non-runnable amd64 binary into the arm64 image.
+ARG TARGETARCH
+RUN if [ "${TARGETARCH}" = "amd64" ]; then \
+        curl -fsSL -o /usr/local/bin/mhsendmail \
+            'https://github.com/mailhog/mhsendmail/releases/download/v0.2.0/mhsendmail_linux_amd64' && \
+        chmod +x /usr/local/bin/mhsendmail; \
+    else \
+        echo "Skipping mhsendmail: no upstream binary for ${TARGETARCH}"; \
+    fi
 
-# Install PHP extensions using PECL
+# Install PHP extensions using PECL (versions pinned for reproducibility)
 RUN set -xe && \
     apt-get update && \
     apt-get install -y --no-install-recommends ${PHPIZE_BUILD_REQUIREMENTS} && \
-    pecl install imagick && \
-    pecl install redis && \
-    pecl install igbinary && \
+    pecl install "imagick-${IMAGICK_VERSION}" && \
+    pecl install "redis-${REDIS_VERSION}" && \
+    pecl install "igbinary-${IGBINARY_VERSION}" && \
     echo "extension=imagick.so" > /usr/local/etc/php/conf.d/20-imagick.ini && \
     echo "extension=redis.so" > /usr/local/etc/php/conf.d/20-redis.ini && \
     echo "extension=igbinary.so" > /usr/local/etc/php/conf.d/20-igbinary.ini && \
@@ -148,12 +157,12 @@ RUN set -xe && \
         echo 'pm.status_path = /status'; \
     } | tee /usr/local/etc/php-fpm.d/zz-docker.conf
 
-# Install Composer 2 and Magento tools (consolidated)
+# Install Composer 2 and Magento tools (consolidated).
+# Use the stable composer.phar URL rather than the unauthenticated GitHub API,
+# which is rate-limited (shared runner IPs) and non-reproducible across the matrix.
 RUN set -xe && \
-    COMPOSER_DOWNLOAD_LATEST=$(curl -s https://api.github.com/repos/composer/composer/releases/latest | jq --raw-output '.assets[] | .browser_download_url' | head -n 1) && \
-    docker-package-download -o /usr/local/bin/composer ${COMPOSER_DOWNLOAD_LATEST} && \
+    docker-package-download -o /usr/local/bin/composer https://getcomposer.org/download/latest-stable/composer.phar && \
     chmod +x /usr/local/bin/composer && \
-    composer selfupdate && \
     curl -fsSL -o /usr/local/bin/magerun https://files.magerun.net/n98-magerun.phar && \
     chmod +x /usr/local/bin/magerun && \
     curl -fsSL -o /usr/local/bin/magerun2 https://files.magerun.net/n98-magerun2.phar && \
@@ -180,6 +189,11 @@ FROM php AS toolbox
 
 ARG TOOLBOX_RUNTIME_REQUIREMENTS="curl git redis-tools mariadb-client percona-toolkit rsync openssh-client vim.tiny php-xdebug"
 ARG TOOLBOX_RUNTIME_REQUIREMENTS_EXTRA=""
+ARG DEPLOYER_VERSION="^7.0"
+
+# Global composer home so tools like deployer are installed once, on PATH, and
+# never pollute the application working directory (/var/www/html).
+ENV COMPOSER_HOME="/usr/local/composer"
 
 SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
 
@@ -200,9 +214,9 @@ RUN /usr/local/bin/docker-install-requirements toolbox && \
     else \
         echo "Skipping Composer 1: not supported on PHP ${PHP_VERSION} (EOL, requires PHP < 8.5)"; \
     fi && \
-    composer require deployer/deployer && \
-    composer update && \
-    echo "export PATH=$PATH:/var/www/html/vendor/bin" >> /etc/profile && \
+    composer global require "deployer/deployer:${DEPLOYER_VERSION}" && \
+    ln -sf "${COMPOSER_HOME}/vendor/bin/dep" /usr/local/bin/dep && \
+    echo "export PATH=\$PATH:${COMPOSER_HOME}/vendor/bin:/var/www/html/vendor/bin" >> /etc/profile && \
     echo "xdebug.mode=coverage" > /usr/local/etc/php/conf.d/xdebug-coverage.ini && \
     /usr/local/bin/docker-layer-clean
 
