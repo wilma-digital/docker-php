@@ -7,6 +7,24 @@ on:
   workflow_dispatch:
 
 jobs:
+  # GitHub disables scheduled workflows after 60 days without repository
+  # activity. Re-enabling them every week through the API resets that timer
+  # without keepalive commits. Manually disabled workflows stay disabled.
+  keepalive:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Keep scheduled workflows enabled
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api "repos/$REPO/actions/workflows" --paginate --jq '.workflows[] | select(.state != "disabled_manually") | .id' |
+            while read -r id; do
+              gh api -X PUT "repos/$REPO/actions/workflows/$id/enable"
+            done
+
   check-releases:
     runs-on: ubuntu-latest
     permissions:
@@ -27,9 +45,9 @@ jobs:
         run: |
           chmod +x check-php-releases.py
           if python3 check-php-releases.py; then
-            echo "updated=false" >> $GITHUB_OUTPUT
+            echo "updated=false" >> "$GITHUB_OUTPUT"
           else
-            echo "updated=true" >> $GITHUB_OUTPUT
+            echo "updated=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Regenerate Dockerfiles

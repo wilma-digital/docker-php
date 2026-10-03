@@ -16,3 +16,48 @@ jobs:
       - uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: ./src/${{ matrix.version }}/src/Dockerfile
+
+  # Build the newest patch of the minors on the official php base without
+  # pushing, so a broken template fails the PR instead of the Monday run.
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['8.5']
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read newest patch
+        id: version
+        env:
+          MINOR: ${{ matrix.version }}
+        run: echo "php=$(jq -r --arg m "$MINOR" '.versions[$m].php_version' versions.json)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build fpm image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./src/${{ matrix.version }}/src
+          target: php
+          load: true
+          tags: local/php:fpm
+          build-args: PHP_VERSION=${{ steps.version.outputs.php }}
+
+      - name: Build toolbox image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./src/${{ matrix.version }}/src
+          target: toolbox
+          load: true
+          tags: local/php:toolbox
+          build-args: PHP_VERSION=${{ steps.version.outputs.php }}
+
+      - name: Smoke test
+        run: |
+          docker run --rm local/php:fpm php -v
+          docker run --rm local/php:fpm php -m
+          docker run --rm local/php:fpm which patch
+          docker run --rm local/php:fpm composer --version
+          docker run --rm -e PHP_EXT_ENABLE=xdebug local/php:toolbox php -m | grep -x xdebug >/dev/null
