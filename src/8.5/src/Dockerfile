@@ -5,7 +5,7 @@
 FROM wilmadigital/php-base:trixie-latest@sha256:998a5cae6daba9fb6413d75a3d167a3ef0be2726cb7725e6f0a72bb4aa0112ef AS builder
 
 # Build arguments
-ARG PHP_VERSION="8.5.8"
+ARG PHP_VERSION="8.5.11"
 ARG PHP_BUILD_REQUIREMENTS="build-essential curl dpkg-dev automake autoconf libtool file g++ gcc libc-dev make pkg-config re2c libxml2-dev libcurl4-gnutls-dev libtidy-dev libsqlite3-dev libssl-dev zlib1g-dev libpng-dev liblzf-dev libreadline6-dev libfreetype6-dev libmcrypt-dev libedit-dev libltdl-dev libxslt-dev libzip-dev libsodium-dev libonig-dev gnupg2 argon2 libargon2-1 libargon2-dev libicu-dev"
 ARG PHP_BUILD_REQUIREMENTS_EXTRA=""
 
@@ -79,7 +79,7 @@ FROM wilmadigital/php-base:trixie-latest@sha256:998a5cae6daba9fb6413d75a3d167a3e
 
 COPY FS /
 
-ARG PHP_VERSION="8.5.8"
+ARG PHP_VERSION="8.5.11"
 ARG PHP_RUNTIME_REQUIREMENTS="jq curl patch libzip-dev libicu-dev libcurl3-gnutls ca-certificates libedit2 libgmp-dev libfreetype6 libltdl7 libmcrypt4 sqlite3 libpng16-16 libfcgi-bin libtidy-dev libsodium23 libonig5 cron zip libxml2 libxslt1.1 libssl3 zlib1g libreadline8 libargon2-1"
 ARG PHP_RUNTIME_REQUIREMENTS_EXTRA=""
 # Pinned PECL extension versions for reproducible builds (latest stable).

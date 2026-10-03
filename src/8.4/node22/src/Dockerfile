@@ -9,7 +9,7 @@
 # Requires:  wilmadigital/php:${PHP_VERSION} and wilmadigital/php:${PHP_VERSION}-toolbox
 #            to be built/pushed first (CI: build-node needs build-base).
 
-ARG PHP_VERSION="8.4.23"
+ARG PHP_VERSION="8.4.26"
 
 # ---------------------------------------------------------------------------
 # php + node  (runtime)

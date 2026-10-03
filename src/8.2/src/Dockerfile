@@ -5,7 +5,7 @@
 FROM wilmadigital/php-base:bookworm-latest@sha256:e8d075f0891e77470a2b800137bcc319a95b17c8e3ff43ddbbd0c61ef5f377ba AS builder
 
 # Build arguments
-ARG PHP_VERSION="8.2.32"
+ARG PHP_VERSION="8.2.34"
 ARG PHP_BUILD_REQUIREMENTS="build-essential curl dpkg-dev automake autoconf libtool file g++ gcc libc-dev make pkg-config re2c libxml2-dev libcurl4-gnutls-dev libtidy-dev libsqlite3-dev libssl-dev zlib1g-dev libpng-dev liblzf-dev libreadline6-dev libfreetype6-dev libmcrypt-dev libedit-dev libltdl-dev libxslt-dev libzip-dev libsodium-dev libonig-dev gnupg2 argon2 libargon2-0 libargon2-dev libicu-dev"
 ARG PHP_BUILD_REQUIREMENTS_EXTRA=""
 
@@ -79,7 +79,7 @@ FROM wilmadigital/php-base:bookworm-latest@sha256:e8d075f0891e77470a2b800137bcc3
 
 COPY FS /
 
-ARG PHP_VERSION="8.2.32"
+ARG PHP_VERSION="8.2.34"
 ARG PHP_RUNTIME_REQUIREMENTS="jq curl patch libcurl3-gnutls ca-certificates libedit2 libgmp-dev libfreetype6 libltdl7 libmcrypt4 sqlite3 libpng16-16 libzip4 libfcgi-bin libtidy5deb1 libsodium23 libonig5 cron zip libxml2 libxslt1.1 libssl3 zlib1g libreadline8 libicu72 libargon2-1"
 ARG PHP_RUNTIME_REQUIREMENTS_EXTRA=""
 # Pinned PECL extension versions for reproducible builds (latest stable).
