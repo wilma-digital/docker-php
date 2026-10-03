@@ -1,6 +1,11 @@
 name: "8.3"
 on:
   workflow_dispatch:
+    inputs:
+      rebuild_all:
+        description: 'Rebuild every patch in the window, not only new ones and the newest'
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -14,6 +19,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
   security-events: write
   actions: read
 
@@ -23,14 +29,52 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  plan:
+    name: "Select patches to build"
+    runs-on: ubuntu-24.04
+    outputs:
+      patches: ${{ steps.select.outputs.patches }}
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Patches are built once and then frozen. Weekly runs refresh only the
+      # newest patch; pushes add patches that are not on ghcr yet.
+      - name: Select patches
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          REBUILD_ALL: ${{ inputs.rebuild_all }}
+        run: |
+          if [ "$EVENT" = "schedule" ]; then
+            SELECTED="35"
+          elif [ "$REBUILD_ALL" = "true" ]; then
+            SELECTED="30 31 32 33 35"
+          else
+            SELECTED=""
+            for p in 30 31 32 33 35; do
+              if [ "$p" = "35" ] || ! docker buildx imagetools inspect "ghcr.io/wilma-digital/php:8.3.$p-fpm" >/dev/null 2>&1; then
+                SELECTED="$SELECTED $p"
+              fi
+            done
+          fi
+          PATCHES="[$(echo "$SELECTED" | xargs | tr ' ' ',')]"
+          echo "Building 8.3 patches: $PATCHES (window: [30, 31, 32, 33, 35])"
+          echo "patches=$PATCHES" >> "$GITHUB_OUTPUT"
+
   build-base:
     name: "PHP ${{ matrix.version }}.${{ matrix.patchVersion }} (${{ matrix.platform.arch }})"
+    needs: plan
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: false
       matrix:
         version: ['8.3']
-        patchVersion: [30, 31, 32, 33, 35]
+        patchVersion: ${{ fromJSON(needs.plan.outputs.patches) }}
         platform:
           - arch: amd64
             runner: ubuntu-24.04
@@ -42,6 +86,13 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to DockerHub
         uses: docker/login-action@v3
@@ -60,9 +111,9 @@ jobs:
           provenance: false
           build-args: |
             PHP_VERSION=${{ matrix.version }}.${{ matrix.patchVersion }}
-          outputs: type=image,name=wilmadigital/php,push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=registry,ref=wilmadigital/php-cache:${{ matrix.version }}-${{ matrix.patchVersion }}-php-${{ matrix.platform.arch }}
-          cache-to: type=registry,ref=wilmadigital/php-cache:${{ matrix.version }}-${{ matrix.patchVersion }}-php-${{ matrix.platform.arch }},mode=max
+          outputs: type=image,name=ghcr.io/wilma-digital/php,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=registry,ref=ghcr.io/wilma-digital/php-cache:${{ matrix.version }}-${{ matrix.patchVersion }}-php-${{ matrix.platform.arch }}
+          cache-to: type=registry,ref=ghcr.io/wilma-digital/php-cache:${{ matrix.version }}-${{ matrix.patchVersion }}-php-${{ matrix.platform.arch }},mode=max
 
       - name: Export php digest
         run: |
@@ -80,9 +131,9 @@ jobs:
           provenance: false
           build-args: |
             PHP_VERSION=${{ matrix.version }}.${{ matrix.patchVersion }}
-          outputs: type=image,name=wilmadigital/php,push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=registry,ref=wilmadigital/php-cache:${{ matrix.version }}-${{ matrix.patchVersion }}-toolbox-${{ matrix.platform.arch }}
-          cache-to: type=registry,ref=wilmadigital/php-cache:${{ matrix.version }}-${{ matrix.patchVersion }}-toolbox-${{ matrix.platform.arch }},mode=max
+          outputs: type=image,name=ghcr.io/wilma-digital/php,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=registry,ref=ghcr.io/wilma-digital/php-cache:${{ matrix.version }}-${{ matrix.patchVersion }}-toolbox-${{ matrix.platform.arch }}
+          cache-to: type=registry,ref=ghcr.io/wilma-digital/php-cache:${{ matrix.version }}-${{ matrix.patchVersion }}-toolbox-${{ matrix.platform.arch }},mode=max
 
       - name: Export toolbox digest
         run: |
@@ -98,16 +149,23 @@ jobs:
 
   merge:
     name: "Merge PHP ${{ matrix.version }}.${{ matrix.patchVersion }}"
-    needs: build-base
+    needs: [plan, build-base]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         version: ['8.3']
-        patchVersion: [30, 31, 32, 33, 35]
+        patchVersion: ${{ fromJSON(needs.plan.outputs.patches) }}
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to DockerHub
         uses: docker/login-action@v3
@@ -122,93 +180,111 @@ jobs:
           path: /tmp/digests
           merge-multiple: true
 
-      - name: Create php manifest
+      - name: Create fpm manifest
+        env:
+          V: ${{ matrix.version }}
+          P: ${{ matrix.patchVersion }}
         run: |
-          TAGS="-t wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}"
-          if [ "${{ matrix.patchVersion }}" = "35" ]; then
-            TAGS="$TAGS -t wilmadigital/php:${{ matrix.version }}"
+          NAMES="$V.$P $V.$P-fpm"
+          if [ "$P" = "35" ]; then
+            NAMES="$NAMES $V $V-fpm"
           fi
-          docker buildx imagetools create $TAGS \
-            wilmadigital/php@$(cat /tmp/digests/php/amd64) \
-            wilmadigital/php@$(cat /tmp/digests/php/arm64)
+          TAGS=()
+          for n in $NAMES; do
+            TAGS+=(-t "ghcr.io/wilma-digital/php:$n" -t "docker.io/wilmadigital/php:$n")
+          done
+          docker buildx imagetools create "${TAGS[@]}" \
+            "ghcr.io/wilma-digital/php@$(cat /tmp/digests/php/amd64)" \
+            "ghcr.io/wilma-digital/php@$(cat /tmp/digests/php/arm64)"
 
       - name: Create toolbox manifest
+        env:
+          V: ${{ matrix.version }}
+          P: ${{ matrix.patchVersion }}
         run: |
-          TAGS="-t wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-toolbox"
-          if [ "${{ matrix.patchVersion }}" = "35" ]; then
-            TAGS="$TAGS -t wilmadigital/php:${{ matrix.version }}-toolbox"
+          NAMES="$V.$P-toolbox"
+          if [ "$P" = "35" ]; then
+            NAMES="$NAMES $V-toolbox"
           fi
-          docker buildx imagetools create $TAGS \
-            wilmadigital/php@$(cat /tmp/digests/toolbox/amd64) \
-            wilmadigital/php@$(cat /tmp/digests/toolbox/arm64)
+          TAGS=()
+          for n in $NAMES; do
+            TAGS+=(-t "ghcr.io/wilma-digital/php:$n" -t "docker.io/wilmadigital/php:$n")
+          done
+          docker buildx imagetools create "${TAGS[@]}" \
+            "ghcr.io/wilma-digital/php@$(cat /tmp/digests/toolbox/amd64)" \
+            "ghcr.io/wilma-digital/php@$(cat /tmp/digests/toolbox/arm64)"
 
-      - name: Smoke test php image
+      - name: Smoke test images
+        shell: bash
         run: |
-          docker pull wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}
-          docker run --rm wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }} php -v
-          docker run --rm wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }} php -m | grep -E "redis|imagick|opcache"
-          docker run --rm wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }} composer --version
+          set -euo pipefail
+          docker pull ghcr.io/wilma-digital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-fpm
+          docker pull ghcr.io/wilma-digital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-toolbox
+          docker run --rm ghcr.io/wilma-digital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-fpm php -v
+          docker run --rm ghcr.io/wilma-digital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-fpm composer --version
+          docker run --rm ghcr.io/wilma-digital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-fpm which patch
+          docker run --rm ghcr.io/wilma-digital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-fpm php -m | grep -E "redis|imagick|opcache"
 
-      - name: Trivy scan php-8.3.${{ matrix.patchVersion }}
+      - name: Trivy scan php
         uses: aquasecurity/trivy-action@master
         continue-on-error: true
         with:
-          image-ref: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}
+          image-ref: ghcr.io/wilma-digital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-fpm
           format: 'sarif'
-          output: 'trivy-php-8.3.${{ matrix.patchVersion }}.sarif'
+          output: 'trivy-php.sarif'
           severity: 'CRITICAL,HIGH'
 
-      - name: Upload Trivy results for php-8.3.${{ matrix.patchVersion }}
+      - name: Upload Trivy results for php
         uses: github/codeql-action/upload-sarif@v3
-        if: always() && hashFiles('trivy-php-8.3.${{ matrix.patchVersion }}.sarif') != ''
+        if: always() && hashFiles('trivy-php.sarif') != ''
         with:
-          sarif_file: 'trivy-php-8.3.${{ matrix.patchVersion }}.sarif'
+          sarif_file: 'trivy-php.sarif'
           category: 'trivy-php-8.3.${{ matrix.patchVersion }}'
 
-      - name: Generate SBOM for php-8.3.${{ matrix.patchVersion }}
+      - name: Generate SBOM for php
         uses: anchore/sbom-action@v0
         continue-on-error: true
         with:
-          image: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}
+          image: ghcr.io/wilma-digital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-fpm
           format: spdx-json
-          output-file: 'sbom-php-8.3.${{ matrix.patchVersion }}.spdx.json'
+          output-file: 'sbom-php.spdx.json'
 
-      - name: Upload SBOM for php-8.3.${{ matrix.patchVersion }}
+      - name: Upload SBOM for php
         uses: actions/upload-artifact@v4
-        if: always() && hashFiles('sbom-php-8.3.${{ matrix.patchVersion }}.spdx.json') != ''
+        if: always() && hashFiles('sbom-php.spdx.json') != ''
         with:
           name: 'sbom-php-8.3.${{ matrix.patchVersion }}'
-          path: 'sbom-php-8.3.${{ matrix.patchVersion }}.spdx.json'
+          path: 'sbom-php.spdx.json'
           retention-days: 90
 
-      - name: Trivy scan toolbox-8.3.${{ matrix.patchVersion }}
+      - name: Trivy scan toolbox
         uses: aquasecurity/trivy-action@master
         continue-on-error: true
         with:
-          image-ref: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-toolbox
+          image-ref: ghcr.io/wilma-digital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-toolbox
           format: 'sarif'
-          output: 'trivy-toolbox-8.3.${{ matrix.patchVersion }}.sarif'
+          output: 'trivy-toolbox.sarif'
           severity: 'CRITICAL,HIGH'
 
-      - name: Upload Trivy results for toolbox-8.3.${{ matrix.patchVersion }}
+      - name: Upload Trivy results for toolbox
         uses: github/codeql-action/upload-sarif@v3
-        if: always() && hashFiles('trivy-toolbox-8.3.${{ matrix.patchVersion }}.sarif') != ''
+        if: always() && hashFiles('trivy-toolbox.sarif') != ''
         with:
-          sarif_file: 'trivy-toolbox-8.3.${{ matrix.patchVersion }}.sarif'
+          sarif_file: 'trivy-toolbox.sarif'
           category: 'trivy-toolbox-8.3.${{ matrix.patchVersion }}'
 
-      - name: Generate SBOM for toolbox-8.3.${{ matrix.patchVersion }}
+      - name: Generate SBOM for toolbox
         uses: anchore/sbom-action@v0
         continue-on-error: true
         with:
-          image: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-toolbox
+          image: ghcr.io/wilma-digital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-toolbox
           format: spdx-json
-          output-file: 'sbom-toolbox-8.3.${{ matrix.patchVersion }}.spdx.json'
+          output-file: 'sbom-toolbox.spdx.json'
 
-      - name: Upload SBOM for toolbox-8.3.${{ matrix.patchVersion }}
+      - name: Upload SBOM for toolbox
         uses: actions/upload-artifact@v4
-        if: always() && hashFiles('sbom-toolbox-8.3.${{ matrix.patchVersion }}.spdx.json') != ''
+        if: always() && hashFiles('sbom-toolbox.spdx.json') != ''
         with:
           name: 'sbom-toolbox-8.3.${{ matrix.patchVersion }}'
-          path: 'sbom-toolbox-8.3.${{ matrix.patchVersion }}.spdx.json'
+          path: 'sbom-toolbox.spdx.json'
           retention-days: 90
