@@ -1,17 +1,18 @@
 name: "8.4-node"
 on:
   workflow_dispatch:
+  # Chained after the base workflow: the variants build FROM its toolbox image.
+  # Covers the weekly refresh and every base change (templates, versions.json).
+  workflow_run:
+    workflows: ["8.4"]
+    types: [completed]
+    branches: [main]
   push:
     branches:
       - main
     paths:
       - 'src/8.4/node*/**'
       - '.github/workflows/php-8.4-node.yml'
-      - 'Dockerfile.node.template'
-      - 'versions.json'
-  schedule:
-    # Runs the day after the base php-8.4 images are built.
-    - cron: '30 8 * * 2'
 
 permissions:
   contents: read
@@ -25,8 +26,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  plan:
+    name: "Check base toolbox image"
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # A push can change the base and the node files at once (e.g. a patch bump).
+      # Then the base image may not be on ghcr yet; the run chained after
+      # php-8.4 builds the variants instead of failing here.
+      - name: Check ghcr.io/wilma-digital/php:8.4.26-toolbox
+        id: check
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if docker buildx imagetools inspect "ghcr.io/wilma-digital/php:8.4.26-toolbox" >/dev/null 2>&1; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = "push" ]; then
+            echo "::notice::8.4.26-toolbox is not on ghcr yet, the run after workflow 8.4 builds the Node variants."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::ghcr.io/wilma-digital/php:8.4.26-toolbox not found, run workflow 8.4 first."
+            exit 1
+          fi
+
   build-node:
     name: "PHP 8.4.26 toolbox + Node ${{ matrix.nodeVersion }}"
+    needs: plan
+    if: needs.plan.outputs.ready == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -35,6 +70,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # workflow_run: build the commit the base images were built from
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
