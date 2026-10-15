@@ -7,8 +7,9 @@ Each PHP version produces TWO workflows:
   * php-<version>.yml       - base fpm + toolbox images.
                               Scheduled on Mondays.
   * php-<version>-node.yml  - Node.js variants layered on the published
-                              toolbox image (no PHP rebuild). Scheduled on
-                              Tuesdays, the day AFTER the base images are built.
+                              toolbox image (no PHP rebuild). Chained via
+                              workflow_run: starts after a successful php-<version>
+                              run, so the toolbox image always exists first.
 
 Registry: images are pushed to ghcr.io/wilma-digital/php (primary, pushed with
 GITHUB_TOKEN, no pull limits) and mirrored to docker.io/wilmadigital/php while
@@ -42,15 +43,6 @@ BASE_SCHEDULE = {
     '8.3': '00 8 * * 1',
     '8.4': '30 8 * * 1',
     '8.5': '00 9 * * 1',
-}
-
-# Node variants build on Tuesday (cron day-of-week 2), one day after the base images.
-NODE_SCHEDULE = {
-    '8.1': '00 7 * * 2',
-    '8.2': '30 7 * * 2',
-    '8.3': '00 8 * * 2',
-    '8.4': '30 8 * * 2',
-    '8.5': '00 9 * * 2',
 }
 
 # Native runners per architecture (no QEMU emulation).
@@ -347,7 +339,6 @@ jobs:
 def generate_node_workflow(version: str, version_config: dict, node_versions: list) -> str:
     node_str = ', '.join(str(n) for n in node_versions)
     latest_patch = max(version_config['patch_versions'])
-    cron_time = NODE_SCHEDULE.get(version, '00 7 * * 2')
     php_full = f"{version}.{latest_patch}"
     ref = f"{IMAGE}:{php_full}-toolbox-node${{{{ matrix.nodeVersion }}}}"
 
@@ -366,17 +357,18 @@ def generate_node_workflow(version: str, version_config: dict, node_versions: li
     return f"""name: "{version}-node"
 on:
   workflow_dispatch:
+  # Chained after the base workflow: the variants build FROM its toolbox image.
+  # Covers the weekly refresh and every base change (templates, versions.json).
+  workflow_run:
+    workflows: ["{version}"]
+    types: [completed]
+    branches: [main]
   push:
     branches:
       - main
     paths:
       - 'src/{version}/node*/**'
       - '.github/workflows/php-{version}-node.yml'
-      - 'Dockerfile.node.template'
-      - 'versions.json'
-  schedule:
-    # Runs the day after the base php-{version} images are built.
-    - cron: '{cron_time}'
 
 permissions:
   contents: read
@@ -390,8 +382,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  plan:
+    name: "Check base toolbox image"
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    outputs:
+      ready: ${{{{ steps.check.outputs.ready }}}}
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{{{ github.actor }}}}
+          password: ${{{{ secrets.GITHUB_TOKEN }}}}
+
+      # A push can change the base and the node files at once (e.g. a patch bump).
+      # Then the base image may not be on ghcr yet; the run chained after
+      # php-{version} builds the variants instead of failing here.
+      - name: Check {IMAGE}:{php_full}-toolbox
+        id: check
+        env:
+          EVENT: ${{{{ github.event_name }}}}
+        run: |
+          if docker buildx imagetools inspect "{IMAGE}:{php_full}-toolbox" >/dev/null 2>&1; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = "push" ]; then
+            echo "::notice::{php_full}-toolbox is not on ghcr yet, the run after workflow {version} builds the Node variants."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::{IMAGE}:{php_full}-toolbox not found, run workflow {version} first."
+            exit 1
+          fi
+
   build-node:
     name: "PHP {php_full} toolbox + Node ${{{{ matrix.nodeVersion }}}}"
+    needs: plan
+    if: needs.plan.outputs.ready == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -400,6 +426,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # workflow_run: build the commit the base images were built from
+          ref: ${{{{ github.event.workflow_run.head_sha || github.sha }}}}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

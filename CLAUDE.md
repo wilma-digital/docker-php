@@ -79,8 +79,8 @@ layers Node.js (via the NodeSource APT repo) on top of the published toolbox ima
 (`FROM ${BASE_IMAGE}:${PHP_VERSION}-toolbox`, default `ghcr.io/wilma-digital/php`). There is
 no php+node runtime variant: production fpm images do not need Node, CI frontend builds use
 the toolbox. Because the variants build `FROM` the published toolbox image, it must exist
-first: CI builds the base images on **Monday** (`php-<version>.yml`) and the Node variants
-on **Tuesday** (`php-<version>-node.yml`). For a local build pass
+first: `php-<version>-node.yml` is chained via `workflow_run` and starts only after a
+successful `php-<version>.yml` run on main. For a local build pass
 `--build-arg BASE_IMAGE=<local repo>`.
 
 ### Base Image Matrix
@@ -256,7 +256,9 @@ top of an already-published toolbox image:
      Xdebug off by default and loadable), Trivy and SBOM on the final tags.
    - Scheduled **Monday**.
 2. `.github/workflows/php-<version>-node.yml` — job `build-node`. Layers Node.js on the
-   newest patch's toolbox image, single multi-arch buildx. Scheduled **Tuesday**.
+   newest patch's toolbox image, single multi-arch buildx. Job `plan` checks that this
+   toolbox image is on ghcr first. No schedule of its own: it runs after every successful
+   base run on main (`workflow_run`), which covers the weekly refresh and base changes.
 
 Build cache is a **registry cache** in `ghcr.io/wilma-digital/php-cache`, not the GitHub
 Actions cache (10 GB/repo limit).
@@ -268,9 +270,11 @@ Actions cache (10 GB/repo limit).
 toolbox+node image per Node version, about 5 × (2 + 2) = 20 instead of ~150 before.
 
 **Triggers** (each workflow):
-- Push to main (its own source paths, relevant template, or `versions.json`)
-- Manual trigger (workflow_dispatch)
-- Weekly schedule (base Monday, node Tuesday)
+- Base: push to main (its own source paths, `Dockerfile.template`, `versions.json`),
+  manual trigger (workflow_dispatch), weekly schedule (Monday)
+- Node: after a successful base run on main (`workflow_run`), push to main touching only
+  its own files (`src/<version>/node*/**`, its workflow), manual trigger. A push whose
+  toolbox image is not on ghcr yet skips the build; the chained run builds it.
 
 ### Automatic Release Check Workflow
 
