@@ -1,142 +1,73 @@
-# OpenMage PHP Container - Template
-# This template is used to generate version-specific Dockerfiles
-# Variables: PHP_VERSION, BASE_IMAGE, PHP_RUNTIME_LIBS, PHP_BUILD_LIBS
+# OpenMage PHP Container - Template (official php base)
+# GENERATED FILES ARE DERIVED FROM THIS TEMPLATE - edit the template, not the output.
+#
+# Unlike Dockerfile.template this does NOT compile PHP. It starts from the
+# official php:X.Y.Z-fpm-<debian> image (every patch tagged, multi-arch,
+# upstream security fixes) and adds extensions with install-php-extensions,
+# which also pulls the matching runtime libraries and removes build deps.
+#
+# Variables: PHP_VERSION, DEBIAN_CODENAME
 
-FROM wilmadigital/php-base:trixie-latest AS builder
+ARG PHP_VERSION="8.5.11"
 
-# Build arguments
-ARG PHP_VERSION="8.5.3"
-ARG PHP_BUILD_REQUIREMENTS="build-essential curl dpkg-dev automake autoconf libtool file g++ gcc libc-dev make pkg-config re2c libxml2-dev libcurl4-gnutls-dev libtidy-dev libsqlite3-dev libssl-dev zlib1g-dev libpng-dev liblzf-dev libreadline6-dev libfreetype6-dev libmcrypt-dev libedit-dev libltdl-dev libxslt-dev libzip-dev libsodium-dev libonig-dev gnupg2 argon2 libargon2-1 libargon2-dev libicu-dev"
-ARG PHP_BUILD_REQUIREMENTS_EXTRA=""
+FROM mlocati/php-extension-installer:2.12 AS installer
 
-ENV PHP_CFLAGS="-fstack-protector-strong -fpic -fpie -O2" \
-    PHP_CPPFLAGS="-fstack-protector-strong -fpic -fpie -O2" \
-    PHP_LDFLAGS="-Wl,-O1 -Wl,--hash-style=both -pie" \
-    PHP_VERSION="${PHP_VERSION}" \
-    PHP_INI_DIR="/usr/local/etc/php" \
-    PHP_SRC_DIR="/usr/src/php" \
-    PHP_URL="https://www.php.net/distributions/php-${PHP_VERSION}.tar.xz"
+# ---------------------------------------------------------------------------
+# php  (fpm runtime)
+# ---------------------------------------------------------------------------
+FROM php:${PHP_VERSION}-fpm-trixie AS php
+
+# Pinned PECL extension versions for reproducible builds (latest stable).
+ARG IMAGICK_VERSION="3.8.1"
+ARG REDIS_VERSION="6.3.0"
+# 3.2.16 does not compile on PHP 8.5 (php_smart_string.h removed); 3.2.17RC1 does.
+ARG IGBINARY_VERSION="3.2.17RC1"
+ARG APCU_VERSION="5.1.28"
+ARG PHP_RUNTIME_REQUIREMENTS="jq curl patch unzip zip cron gosu less procps iputils-ping iproute2 libfcgi-bin"
+ARG PHP_RUNTIME_REQUIREMENTS_EXTRA=""
+
+ENV DOCUMENT_ROOT="/var/www/html" \
+    DEBIAN_FRONTEND=noninteractive
 
 SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
 
-# Install build dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ${PHP_BUILD_REQUIREMENTS} ${PHP_BUILD_REQUIREMENTS_EXTRA} && \
-    rm -rf /var/lib/apt/lists/*
-
-# Download and extract PHP source
-WORKDIR /usr/src
-RUN curl -fsSL -o php.tar.xz "$PHP_URL" && \
-    tar -xf php.tar.xz && \
-    mv php-${PHP_VERSION} php && \
-    rm php.tar.xz
-
-# Configure and build PHP
-WORKDIR /usr/src/php
-RUN gnuArch="$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)"; \
-    debMultiarch="$(dpkg-architecture --query DEB_BUILD_MULTIARCH)"; \
-    if [ ! -d "/usr/include/curl" ]; then \
-        ln -sT "/usr/include/${debMultiarch}/curl" /usr/local/include/curl; \
-    fi; \
-    export CFLAGS="$PHP_CFLAGS" CPPFLAGS="$PHP_CPPFLAGS" LDFLAGS="$PHP_LDFLAGS"; \
-    ./configure \
-        --build="$gnuArch" \
-        --with-config-file-path="$PHP_INI_DIR" \
-        --with-config-file-scan-dir="$PHP_INI_DIR/conf.d" \
-        --enable-option-checking=fatal \
-        --disable-cgi \
-        --with-pear \
-        --with-pdo-mysql=mysqlnd \
-        --enable-mysqlnd \
-        --with-mhash \
-        --enable-ftp \
-        --enable-mbstring \
-        --with-curl \
-        --with-libedit \
-        --with-openssl \
-        --with-zlib \
-        --enable-exif \
-        --enable-bcmath \
-        --enable-sockets \
-        --with-xsl \
-        --enable-pcntl \
-        --with-sodium \
-        --with-tidy \
-        --enable-gd \
-        --with-jpeg \
-        --with-freetype \
-        --enable-soap \
-        --enable-intl \
-        --enable-fpm \
-        --with-fpm-user=www-data \
-        --with-fpm-group=www-data && \
-    make -j "$(nproc)" && \
-    make install && \
-    rm -rf /usr/src/php
-
-# Runtime stage
-FROM wilmadigital/php-base:trixie-latest AS php
-
+COPY --from=installer /usr/bin/install-php-extensions /usr/local/bin/
 COPY FS /
 
-ARG PHP_VERSION="8.5.3"
-ARG PHP_RUNTIME_REQUIREMENTS="jq curl libzip-dev libicu-dev libcurl3-gnutls ca-certificates libedit2 libgmp-dev libfreetype6 libltdl7 libmcrypt4 sqlite3 libpng16-16 libfcgi-bin libtidy-dev libsodium23 libonig5 cron zip libxml2 libxslt1.1 libssl3 zlib1g libreadline8 libargon2-1"
-ARG PHP_RUNTIME_REQUIREMENTS_EXTRA=""
-ARG IMAGICK_VERSION="3.8.0"
-
-ENV PHP_INI_DIR="/usr/local/etc/php" \
-    PHP_VERSION="${PHP_VERSION}" \
-    PHPIZE_BUILD_REQUIREMENTS="build-essential automake autoconf libtool file g++ gcc libc-dev make pkg-config re2c libltdl-dev" \
-    DOCUMENT_ROOT="/var/www/html" \
-    IMAGICK_VERSION="${IMAGICK_VERSION}"
-
-SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
-
-# Copy compiled PHP from builder
-COPY --from=builder /usr/local/ /usr/local/
-
-# Install runtime dependencies and configure PHP
+# Runtime tools and PHP extensions. `patch` is required by composer-patches
+# (see CLAUDE.md), so it must never be dropped from the runtime requirements.
+# hadolint ignore=DL3008,DL3009
 RUN set -xe && \
-    chmod 755 /usr/local/bin/docker-entrypoint && \
-    /usr/local/bin/docker-install-requirements php && \
-    ln -fs /etc/alternatives/vi /usr/bin/vim && \
-    mkdir -p "${PHP_INI_DIR}/conf.d" /tmp/mhsendmail /usr/src && \
+    chmod 755 /usr/local/bin/docker-entrypoint /usr/local/bin/docker-layer-clean \
+        /usr/local/bin/docker-fpm-healthcheck /usr/local/bin/phpgosu && \
     apt-get update && \
     apt-get install -y --no-install-recommends ${PHP_RUNTIME_REQUIREMENTS} ${PHP_RUNTIME_REQUIREMENTS_EXTRA} && \
-    rm -rf /var/lib/apt/lists/*
+    install-php-extensions \
+        bcmath bz2 exif ftp gd gmp intl mysqli opcache pcntl pdo_mysql soap sockets tidy xsl zip \
+        "imagick-${IMAGICK_VERSION}" \
+        "igbinary-${IGBINARY_VERSION}" \
+        "redis-${REDIS_VERSION}" \
+        "apcu-${APCU_VERSION}" && \
+    mkdir -p /home/www-data && \
+    chown www-data:www-data /home/www-data && \
+    chmod 711 /home/www-data && \
+    usermod -d /home/www-data www-data && \
+    /usr/local/bin/docker-layer-clean
 
-# Install mhsendmail
-RUN curl -fsSL -o /usr/local/bin/mhsendmail \
-    'https://github.com/mailhog/mhsendmail/releases/download/v0.2.0/mhsendmail_linux_amd64' && \
-    chmod +x /usr/local/bin/mhsendmail
+# Install mhsendmail (dev SMTP shim). Upstream ships an amd64 binary only, and it
+# is not wired into php.ini, so install it on amd64 and skip it elsewhere rather
+# than baking a non-runnable amd64 binary into the arm64 image.
+ARG TARGETARCH
+RUN if [ "${TARGETARCH}" = "amd64" ]; then \
+        curl -fsSL -o /usr/local/bin/mhsendmail \
+            'https://github.com/mailhog/mhsendmail/releases/download/v0.2.0/mhsendmail_linux_amd64' && \
+        chmod +x /usr/local/bin/mhsendmail; \
+    else \
+        echo "Skipping mhsendmail: no upstream binary for ${TARGETARCH}"; \
+    fi
 
-# Install PHP extensions using PECL
-RUN set -xe && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends ${PHPIZE_BUILD_REQUIREMENTS} && \
-    pecl install imagick && \
-    pecl install redis && \
-    pecl install igbinary && \
-    echo "extension=imagick.so" > /usr/local/etc/php/conf.d/20-imagick.ini && \
-    echo "extension=redis.so" > /usr/local/etc/php/conf.d/20-redis.ini && \
-    echo "extension=igbinary.so" > /usr/local/etc/php/conf.d/20-igbinary.ini && \
-    apt-get purge -y --auto-remove ${PHPIZE_BUILD_REQUIREMENTS} && \
-    rm -rf /var/lib/apt/lists/*
-
-# Configure PHP-FPM
-RUN set -xe && \
-    sed 's!=NONE/!=!g' /usr/local/etc/php-fpm.conf.default | tee /usr/local/etc/php-fpm.conf > /dev/null && \
-    cp /usr/local/etc/php-fpm.d/www.conf.default /usr/local/etc/php-fpm.d/www.conf && \
-    { \
-        echo '[global]'; \
-        echo 'error_log = /proc/self/fd/2'; \
-        echo; \
-        echo '[www]'; \
-        echo 'access.log = /proc/self/fd/2'; \
-        echo 'clear_env = no'; \
-        echo 'catch_workers_output = yes'; \
-    } | tee /usr/local/etc/php-fpm.d/docker.conf && \
-    { \
+# PHP-FPM pool settings on top of the official docker.conf / zz-docker.conf.
+RUN { \
         echo '[global]'; \
         echo 'daemonize = no'; \
         echo; \
@@ -146,22 +77,17 @@ RUN set -xe && \
         echo 'pm.min_spare_servers = 2'; \
         echo 'pm.max_spare_servers = 5'; \
         echo 'pm.status_path = /status'; \
-    } | tee /usr/local/etc/php-fpm.d/zz-docker.conf
+    } > /usr/local/etc/php-fpm.d/zz-docker.conf
 
-# Install Composer 2 and Magento tools (consolidated)
+# Install Composer 2 and Magento tools.
+# Use the stable composer.phar URL rather than the unauthenticated GitHub API,
+# which is rate-limited (shared runner IPs) and non-reproducible across the matrix.
 RUN set -xe && \
-    COMPOSER_DOWNLOAD_LATEST=$(curl -s https://api.github.com/repos/composer/composer/releases/latest | jq --raw-output '.assets[] | .browser_download_url' | head -n 1) && \
-    docker-package-download -o /usr/local/bin/composer ${COMPOSER_DOWNLOAD_LATEST} && \
-    chmod +x /usr/local/bin/composer && \
-    composer selfupdate && \
-    curl -fsSL -o /usr/local/bin/magerun https://files.magerun.net/n98-magerun.phar && \
-    chmod +x /usr/local/bin/magerun && \
-    curl -fsSL -o /usr/local/bin/magerun2 https://files.magerun.net/n98-magerun2.phar && \
-    chmod +x /usr/local/bin/magerun2 && \
-    /usr/local/bin/docker-layer-clean
-
-# Set up permissions for www-data user
-RUN mkdir -p /var/www/html && \
+    curl -fsSL --retry 5 -o /usr/local/bin/composer https://getcomposer.org/download/latest-stable/composer.phar && \
+    curl -fsSL --retry 5 -o /usr/local/bin/magerun https://files.magerun.net/n98-magerun.phar && \
+    curl -fsSL --retry 5 -o /usr/local/bin/magerun2 https://files.magerun.net/n98-magerun2.phar && \
+    chmod +x /usr/local/bin/composer /usr/local/bin/magerun /usr/local/bin/magerun2 && \
+    mkdir -p /var/www/html && \
     chown -R www-data:www-data /var/www/html && \
     chmod -R 755 /var/www/html
 
@@ -169,41 +95,42 @@ WORKDIR /var/www/html
 
 # Health check for PHP-FPM status endpoint
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD pgrep -f "php-fpm: master process" > /dev/null || exit 1
+  CMD ["/bin/sh", "-c", "pgrep -f 'php-fpm: master process' > /dev/null || exit 1"]
 
 ENTRYPOINT ["docker-entrypoint"]
 CMD ["php-fpm"]
 EXPOSE 9000
 
-# Toolbox stage - includes development tools
+# ---------------------------------------------------------------------------
+# toolbox  (CI / development tools)
+# ---------------------------------------------------------------------------
 FROM php AS toolbox
 
-ARG TOOLBOX_RUNTIME_REQUIREMENTS="curl git redis-tools mariadb-client percona-toolkit rsync openssh-client vim.tiny php-xdebug"
+ARG XDEBUG_VERSION="3.5.3"
+ARG PCOV_VERSION="1.0.12"
+ARG DEPLOYER_VERSION="^7.0"
+ARG TOOLBOX_RUNTIME_REQUIREMENTS="git redis-tools mariadb-client percona-toolkit rsync openssh-client vim.tiny"
 ARG TOOLBOX_RUNTIME_REQUIREMENTS_EXTRA=""
 
-SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
+# Global composer home so tools like deployer are installed once, on PATH, and
+# never pollute the application working directory (/var/www/html).
+ENV COMPOSER_HOME="/usr/local/composer"
 
-# Install development tools.
-# Composer 1 is EOL (last release 1.10.27) and only runs on PHP < 8.5; on PHP
-# 8.5+ it fatals (exit 255) and aborts the build. It is therefore installed
-# only on compatible PHP versions, decided at build time from the compiled
-# PHP. Composer 2 and deployer remain available on every version.
-RUN /usr/local/bin/docker-install-requirements toolbox && \
+# Xdebug and pcov are built against this PHP (PECL), not taken from Debian's
+# php-xdebug, which would drag in a second PHP. Both are installed but OFF by
+# default; enable per job with PHP_EXT_ENABLE=xdebug (or pcov), handled by
+# docker-entrypoint, or `docker-php-ext-enable xdebug` in a CI script.
+# hadolint ignore=DL3008,DL3009,DL4006
+RUN set -xe && \
     apt-get update && \
     apt-get install -y --no-install-recommends ${TOOLBOX_RUNTIME_REQUIREMENTS} ${TOOLBOX_RUNTIME_REQUIREMENTS_EXTRA} && \
-    rm -rf /var/lib/apt/lists/* && \
-    curl https://rclone.org/install.sh | bash && \
-    if php -r 'exit(version_compare(PHP_VERSION, "8.5.0", "<") ? 0 : 1);'; then \
-        docker-package-download -o /usr/local/bin/composer1 https://getcomposer.org/composer-1.phar && \
-        chmod +x /usr/local/bin/composer1 && \
-        composer1 selfupdate; \
-    else \
-        echo "Skipping Composer 1: not supported on PHP ${PHP_VERSION} (EOL, requires PHP < 8.5)"; \
-    fi && \
-    composer require deployer/deployer && \
-    composer update && \
-    echo "export PATH=$PATH:/var/www/html/vendor/bin" >> /etc/profile && \
-    echo "xdebug.mode=coverage" > /usr/local/etc/php/conf.d/xdebug-coverage.ini && \
+    install-php-extensions "xdebug-${XDEBUG_VERSION}" "pcov-${PCOV_VERSION}" && \
+    rm -f "${PHP_INI_DIR}/conf.d/docker-php-ext-xdebug.ini" "${PHP_INI_DIR}/conf.d/docker-php-ext-pcov.ini" && \
+    echo "xdebug.mode=coverage" > "${PHP_INI_DIR}/conf.d/xdebug-coverage.ini" && \
+    curl -fsSL https://rclone.org/install.sh | bash && \
+    composer global require "deployer/deployer:${DEPLOYER_VERSION}" && \
+    ln -sf "${COMPOSER_HOME}/vendor/bin/dep" /usr/local/bin/dep && \
+    echo "export PATH=\$PATH:${COMPOSER_HOME}/vendor/bin:/var/www/html/vendor/bin" >> /etc/profile && \
     /usr/local/bin/docker-layer-clean
 
 CMD ["php", "-a"]

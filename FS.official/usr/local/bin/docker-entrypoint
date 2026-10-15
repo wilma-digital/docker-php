@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+[ "${DEBUG}" = "true" ] && set -x
+
+if [ -z "${KUBERNETES_SERVICE_HOST}" ]; then
+    HOST_DOMAIN="host.docker.internal"
+    ping -q -c1 $HOST_DOMAIN > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+      HOST_IP=$(ip route | awk 'NR==1 {print $3}')
+      echo -e "$HOST_IP\t$HOST_DOMAIN" >> /etc/hosts
+    fi
+fi
+
+set -e
+
+if [ -n "${PHP_EXT_ENABLE}" ]; then
+  docker-php-ext-enable ${PHP_EXT_ENABLE}
+fi
+
+DOCKER_UID=$(stat -c "%u" "${DOCUMENT_ROOT}")
+DOCKER_GID=$(stat -c "%g" "${DOCUMENT_ROOT}")
+
+if [[ "${DOCKER_UID}" -ne "33" || "${DOCKER_GID}" -ne "33" ]] && [[ ! -f /root/.uid-gid-fixed && "${FIX_UID_GID}" = "true" ]]; then
+  CONFLICT_USER=$(getent passwd "${DOCKER_UID}" | cut -d: -f1)
+  CONFLICT_GROUP=$(getent group "${DOCKER_GID}" | cut -d: -f1)
+  echo "Docker: uid = ${DOCKER_UID}, gid = ${DOCKER_GID}"
+  echo "Conflict: user = ${CONFLICT_USER}, group = ${CONFLICT_GROUP}"
+  # Once we've established the ids and incumbent ids then we need to free them
+  # up (if necessary) and then make the change to www-data.
+  CONFLICT_OFFSET=$(( $RANDOM % 10000 + 1))
+  [ ! -z "${CONFLICT_USER}" ] && usermod -u $(expr 50000 - "${CONFLICT_OFFSET}" - "${DOCKER_UID}") "${CONFLICT_USER}"
+  usermod -u "${DOCKER_UID}" www-data
+  [ ! -z "${CONFLICT_GROUP}" ] && groupmod -g $(expr 50000 - "${CONFLICT_OFFSET}" - "${DOCKER_GID}") "${CONFLICT_GROUP}"
+  groupmod -g "${DOCKER_GID}" www-data
+  touch /root/.uid-gid-fixed
+fi
+
+if test -f "/usr/local/bin/docker-entrypoint-custom"; then
+source "/usr/local/bin/docker-entrypoint-custom"
+fi
+
+if [ "$1" = "/usr/local/bin/php" ] || [ "$1" = "php" ]; then
+  exec gosu "${DOCKER_UID}":"${DOCKER_GID}" "$@"
+elif [ "$1" = "console" ]; then
+  set -- "${@:2}"
+  exec gosu "${DOCKER_UID}":"${DOCKER_GID}" "/bin/bash" "${@}"
+elif [ "$1" = "/usr/local/bin/composer" ] || [ "$1" = "composer" ]; then
+  exec gosu "${DOCKER_UID}":"${DOCKER_GID}" "$@"
+elif [ "$1" = "/usr/local/bin/magerun" ] || [ "$1" = "magerun" ]; then
+  exec gosu "${DOCKER_UID}":"${DOCKER_GID}" "$@"
+elif [ "$1" = "/usr/local/bin/magerun2" ] || [ "$1" = "magerun2" ]; then
+  exec gosu "${DOCKER_UID}":"${DOCKER_GID}" "$@"
+elif [ "$1" = "/usr/local/sbin/php-fpm" ] || [ "$1" = "php-fpm" ]; then
+    exec "$@"
+elif  [ "$1" = "/usr/sbin/cron" ] || [ "$1" = "cron" ]; then
+  if test -f "${CRONTAB_CONFIG}"; then
+    echo "Adding crontab in ${CRONTAB_CONFIG}"
+    /usr/bin/crontab -u www-data "${CRONTAB_CONFIG}"
+  fi
+fi
+exec "$@"

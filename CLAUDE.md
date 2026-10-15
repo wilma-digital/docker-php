@@ -4,7 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-This repository contains Docker images for OpenMage PHP containers with automated version management. It supports PHP versions 8.1-8.5, each available with or without Node.js (versions 22, 24, 25). Images come in two variants: `php` (runtime) and `toolbox` (extended with development tools).
+This repository contains Docker images for OpenMage PHP containers with automated version management. It supports PHP versions 8.1-8.5. Images come in two variants: `php`/`fpm` (runtime) and `toolbox` (extended with development tools); the toolbox of the newest patch per minor is also offered with Node.js (22, 24; 26 from its LTS start on 2026-10-28).
+
+**Registry**: `ghcr.io/wilma-digital/php` is primary (pushed with `GITHUB_TOKEN`), `docker.io/wilmadigital/php` is a mirror while consumers migrate.
+
+**Patch window per branch**: for each PHP minor we build only the most recent patch
+releases — the last **5** for maintained branches (active or security support) and the last
+**3** for EOL branches — driven by the `maintained` flag in `versions.json`. As of mid-2026
+that is 8.2/8.3/8.4/8.5 (maintained, 5 each) and 8.1 (EOL, 3). `check-php-releases.py`
+recomputes this sliding window from php.net, so old patches drop off as new ones ship.
 
 ## Architecture
 
@@ -13,7 +21,9 @@ This repository contains Docker images for OpenMage PHP containers with automate
 The repository uses a **template-based system** to eliminate duplication:
 
 ```
-├── Dockerfile.template       # Source of truth for the base php/toolbox images (compiles PHP)
+├── Dockerfile.template       # Base php/toolbox images that still compile PHP (8.1-8.4)
+├── Dockerfile.official.template  # Base php/toolbox images on the official php image (8.5)
+├── FS.official/              # Helper scripts copied into official-base build contexts
 ├── Dockerfile.node.template  # Source of truth for the Node.js variants (layers Node on the php image)
 ├── versions.json             # Version configuration (PHP + Node.js)
 ├── generate-dockerfiles.py   # Generates version-specific Dockerfiles
@@ -23,17 +33,27 @@ The repository uses a **template-based system** to eliminate duplication:
     ├── 8.1/
     │   ├── src/             # PHP 8.1 base
     │   ├── node22/src/      # PHP 8.1 + Node.js 22
-    │   ├── node24/src/      # PHP 8.1 + Node.js 24
-    │   └── node25/src/      # PHP 8.1 + Node.js 25
+    │   └── node24/src/      # PHP 8.1 + Node.js 24
     ├── 8.2/
     ├── 8.3/
     ├── 8.4/
     └── 8.5/
 ```
 
-**Key Principle**: Never edit Dockerfiles directly - always edit the appropriate template (`Dockerfile.template` for base images, `Dockerfile.node.template` for Node variants) and regenerate.
+**Key Principle**: Never edit Dockerfiles directly - always edit the appropriate template (`Dockerfile.official.template` or `Dockerfile.template` for base images, `Dockerfile.node.template` for Node variants) and regenerate.
 
 ### Multi-Stage Build
+
+**Official base** (`Dockerfile.official.template`, versions with `"build": "official"`):
+starts from `php:X.Y.Z-fpm-<debian>` (every patch tagged upstream, multi-arch, upstream
+security fixes) and adds extensions with `install-php-extensions`, which pulls the runtime
+libraries and removes build deps again. ImageMagick comes from Debian. The helper scripts
+that `wilmadigital/php-base` used to provide (`docker-entrypoint`, `phpgosu`,
+`docker-fpm-healthcheck`, `docker-layer-clean`) live in `FS.official/` and are copied into
+the build context by `generate-dockerfiles.py`. The toolbox builds Xdebug and pcov from PECL
+and leaves both **off**; enable them per job with `PHP_EXT_ENABLE=xdebug` (or `pcov`, both
+space-separated), which `docker-entrypoint` passes to `docker-php-ext-enable`.
+`xdebug.mode=coverage` is preset.
 
 **Base images** (`Dockerfile.template`) use an optimized 3-stage build:
 
@@ -54,30 +74,38 @@ The repository uses a **template-based system** to eliminate duplication:
    - Composer 1 (legacy support)
    - xdebug with coverage mode
 
-**Node.js variants** (`Dockerfile.node.template`) do **not** recompile PHP. Each variant
-layers Node.js (via the NodeSource APT repo) directly on top of the already-built base
-images: the `php` target is `FROM wilmadigital/php:${PHP_VERSION}` and the `toolbox` target
-is `FROM wilmadigital/php:${PHP_VERSION}-toolbox`. PHP is therefore compiled exactly once
-(in the base image) and reused across all Node.js variants. The variant Dockerfile needs no
-PHP source, no `FS/` (php.ini is baked into the base image) and only the Dockerfile as build
-context. Because of this dependency, CI builds the base images first (`build-node` declares
-`needs: build-base`).
+**Node.js variants** (`Dockerfile.node.template`) do **not** rebuild PHP. Each variant
+layers Node.js (via the NodeSource APT repo) on top of the published toolbox image
+(`FROM ${BASE_IMAGE}:${PHP_VERSION}-toolbox`, default `ghcr.io/wilma-digital/php`). There is
+no php+node runtime variant: production fpm images do not need Node, CI frontend builds use
+the toolbox. Because the variants build `FROM` the published toolbox image, it must exist
+first: CI builds the base images on **Monday** (`php-<version>.yml`) and the Node variants
+on **Tuesday** (`php-<version>-node.yml`). For a local build pass
+`--build-arg BASE_IMAGE=<local repo>`.
 
 ### Base Image Matrix
 
-- **PHP 8.1-8.4**: `wilmadigital/php-base:bookworm-latest` (Debian Bookworm)
-- **PHP 8.5**: `wilmadigital/php-base:trixie-latest` (Debian Trixie)
+- **PHP 8.1-8.4**: compiled on `wilmadigital/php-base:bookworm-latest` (Debian Bookworm),
+  pinned by digest (`tag@sha256:...`) in `versions.json`
+- **PHP 8.5**: official `php:8.5.Z-fpm-trixie` (Debian Trixie)
+
+Moving 8.2-8.4 to the official trixie base is the next step (`"build": "official"`,
+`"debian": "trixie"` in `versions.json`, test each minor). 8.1 is EOL and stays as is.
 
 ### Build Optimizations
 
 **Implemented optimizations**:
 - Consolidated RUN commands (better layer caching)
 - Explicit builder stage (reduces image size by ~500MB)
-- Removed pickle.phar after extension installation
-- Removed redundant chmod operations
-- Fixed package duplication
-- Registry caching enabled for faster rebuilds
-- Composer 1 only in toolbox stage
+- PHP compiled once in the base image; Node variants layer on top (no recompile)
+- **Native per-arch runners** for base builds (amd64 + arm64), no QEMU emulation — the
+  arm64 PHP compile is native instead of ~5-10x slower emulated
+- **Registry build cache** (`ghcr.io/wilma-digital/php-cache`) instead of the 10 GB-capped GHA cache
+- Base image pinned by digest → compile layer stays cache-stable across scheduled rebuilds
+- PECL extensions and Composer/deployer pinned for reproducible builds
+- `mhsendmail` installed arch-correctly (amd64 only, skipped on arm64)
+- Composer downloaded from the stable `getcomposer.org` URL (no rate-limited GitHub API)
+- Composer 1 only in toolbox stage, and only on PHP < 8.5
 
 **Image size reduction**: ~650MB per image vs. previous approach
 
@@ -91,18 +119,35 @@ Edit `versions.json` to add/modify PHP versions or Node.js variants:
 {
   "versions": {
     "8.5": {
-      "php_version": "8.5.3",
+      "php_version": "8.5.8",
       "base_image": "wilmadigital/php-base:trixie-latest",
-      "patch_versions": [0, 1, 2, 3],
+      "maintained": true,
+      "patch_versions": [4, 5, 6, 7, 8],
       "php_runtime_libs": "...",
       "php_build_libs": "..."
     }
   },
-  "node_versions": [22, 24, 25]
+  "node_versions": [22, 24, 26]
 }
 ```
 
-With patch_versions being the latest 5 minor Release versions from https://www.php.net/releases/ for maintained versions and latst 3 versions from EOL versions.
+`patch_versions` holds the latest 5 patch releases from https://www.php.net/releases/ for
+maintained branches (`"maintained": true`) and the latest 3 for EOL branches
+(`"maintained": false`). `check-php-releases.py` maintains this window automatically.
+
+#### Do not remove `patch` from `php_runtime_libs`
+
+`patch` (GNU patch) looks like a build-time tool and is not one here. The predecessor
+images (`openmage/php`) carried it by accident: `dpkg-dev` depends on it and everything
+lived in a single layer. This build separates the builder and runtime stages and runs
+`apt-get purge --auto-remove` on the build requirements, which takes `patch` with it —
+which is why the 8.3.30 toolbox image shipped without it and nobody noticed.
+
+Magento projects need it at install time. `cweagans/composer-patches` bails out of its
+`git apply` path whenever `$install_path/.git` is missing, and a Composer dist package
+such as `magento/framework` never has one — so the `patch` binary is the only path left.
+Without it `composer install` fails with `Cannot apply patch … Skipping`, which reads
+like a broken patch file rather than a missing package.
 
 ### Regenerating Build Files
 
@@ -176,56 +221,70 @@ docker build --target toolbox -t wilmadigital/php:8.5.1-toolbox .
 
 ## Image Tags
 
-**Base PHP images**:
-- `wilmadigital/php:8.5.1` - PHP 8.5.1 runtime
-- `wilmadigital/php:8.5.1-toolbox` - With development tools
+All tags exist on `ghcr.io/wilma-digital/php` and the mirror `docker.io/wilmadigital/php`.
 
-**Node.js variants**:
-- `wilmadigital/php:8.5.1-node22` - PHP 8.5.1 + Node.js 22
-- `wilmadigital/php:8.5.1-node24` - PHP 8.5.1 + Node.js 24
-- `wilmadigital/php:8.5.1-node25` - PHP 8.5.1 + Node.js 25
-- `wilmadigital/php:8.5.1-node22-toolbox` - With development tools
+| Tag | Content |
+|---|---|
+| `8.5.11-fpm`, alias `8.5.11` | fpm runtime, fixed patch |
+| `8.5.11-toolbox` | toolbox, fixed patch |
+| `8.5-fpm`, alias `8.5` | newest 8.5 patch, fpm |
+| `8.5-toolbox` | newest 8.5 patch, toolbox |
+| `8.5-toolbox-node24`, `8.5.11-toolbox-node24` | newest patch toolbox + Node 24 |
+| `8.5-node24-toolbox` | old name of the above, kept as alias |
 
-**Rolling major.minor tags** (always point to the highest patch built for that minor):
-- `wilmadigital/php:8.5` - latest 8.5.x runtime
-- `wilmadigital/php:8.5-toolbox` - latest 8.5.x toolbox
-- `wilmadigital/php:8.5-node22` - latest 8.5.x + Node.js 22
-- `wilmadigital/php:8.5-node22-toolbox` - latest 8.5.x + Node.js 22 + tools
-
-Downstream projects should pin the rolling `8.5` (etc.) tag to pick up patch releases
-automatically without editing anything. The rolling tag is published only by the build for
-the highest patch in `versions.json` → `patch_versions`.
+Downstream projects should use the rolling `8.5-toolbox` (etc.) tag to pick up patch
+releases automatically. Rolling tags are published only by the build for the highest patch
+in `versions.json` → `patch_versions`.
 
 ## GitHub Actions Workflows
 
 ### Version-Specific Workflows
 
-Each PHP version has a workflow (`.github/workflows/php-8.X.yml`):
+Each PHP version has **two** workflows on consecutive days, so the Node variants build on
+top of an already-published toolbox image:
 
-**Two build jobs**:
-1. `build-base`: Builds PHP-only images (php + toolbox)
-2. `build-node`: Builds Node.js variants (3 versions × 2 targets = 6 images). Runs **after**
-   `build-base` (`needs: build-base`) because the variants layer on the freshly pushed
-   `wilmadigital/php:<patch>` images rather than recompiling PHP.
+1. `.github/workflows/php-<version>.yml` — jobs `plan`, `build-base`, `merge`.
+   - `plan` applies the **rebuild rule**: every patch is built once and then frozen. A
+     scheduled run rebuilds only the newest patch (base OS security updates); a push to
+     main builds the newest patch plus every patch of the window that is missing on ghcr;
+     `workflow_dispatch` with `rebuild_all` rebuilds the whole window.
+   - `build-base` runs each architecture on a **native runner** (`ubuntu-24.04` for
+     amd64, `ubuntu-24.04-arm` for arm64), building the `php` and `toolbox` targets and
+     pushing them **by digest** to ghcr.
+   - `merge` assembles the multi-arch tags on ghcr and the Docker Hub mirror via
+     `docker buildx imagetools create`, then runs smoke test (extension list, `patch`,
+     Xdebug off by default and loadable), Trivy and SBOM on the final tags.
+   - Scheduled **Monday**.
+2. `.github/workflows/php-<version>-node.yml` — job `build-node`. Layers Node.js on the
+   newest patch's toolbox image, single multi-arch buildx. Scheduled **Tuesday**.
 
-**Total images per PHP version**: 8 (2 base + 6 Node.js variants)
+Build cache is a **registry cache** in `ghcr.io/wilma-digital/php-cache`, not the GitHub
+Actions cache (10 GB/repo limit).
 
-**Triggers**:
-- Push to main (version-specific paths, template, or config changes)
+> Requires GitHub-hosted **arm64 runners** (`ubuntu-24.04-arm`); on private repos these are
+> billed.
+
+**Images per week** (scheduled): per minor fpm + toolbox for the newest patch plus one
+toolbox+node image per Node version, about 5 × (2 + 2) = 20 instead of ~150 before.
+
+**Triggers** (each workflow):
+- Push to main (its own source paths, relevant template, or `versions.json`)
 - Manual trigger (workflow_dispatch)
-- Weekly schedule (Monday 7 AM UTC)
+- Weekly schedule (base Monday, node Tuesday)
 
 ### Automatic Release Check Workflow
 
 `.github/workflows/check-releases.yml`:
 - Runs weekly (Monday 8 AM UTC)
-- Checks PHP.net API for new releases
-- Creates PR if updates found
-- Includes regenerated Dockerfiles and workflows
+- Checks PHP.net API for new releases, creates a PR with regenerated files
+- Job `keepalive` re-enables every workflow that was not disabled manually. GitHub
+  disables scheduled workflows after 60 days without repository activity; re-enabling
+  through the API resets that timer.
 
 ### Pull Request Workflow
 
-Runs hadolint linting on all Dockerfiles for PRs targeting main.
+Runs hadolint on all base Dockerfiles and builds + smoke tests the newest 8.5 patch
+(fpm + toolbox, no push).
 
 ## Dockerfile Linting
 
@@ -272,16 +331,14 @@ Production `php.ini` highlights:
 
 ## Node.js Support
 
-Node.js is installed via NodeSource APT repository:
-- Latest npm installed globally
-- Available in PATH
-- Versions: 22 (LTS), 24 (LTS), 25 (Current)
+Node.js is installed via the NodeSource APT repository, only on toolbox images of the
+newest patch per minor. Versions: 22 and 24 (LTS); 26 joins once it becomes LTS
+(2026-10-28), 22 leaves at its EOL (2027-04-30).
 
 **Usage**:
-```dockerfile
-FROM wilmadigital/php:8.5.1-node22
-# Node.js 22 and npm available
-RUN node --version && npm --version
+```yaml
+# .gitlab-ci.yml
+image: ghcr.io/wilma-digital/php:8.5-toolbox-node24
 ```
 
 ## Common Tasks
@@ -313,7 +370,7 @@ RUN node --version && npm --version
 
 1. Edit `versions.json`:
    ```json
-   "node_versions": [22, 24, 25, 26]
+   "node_versions": [22, 24, 26]
    ```
 
 2. Regenerate:

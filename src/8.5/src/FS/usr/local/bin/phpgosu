@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+DOCKER_UID=$(id -u)
+if [ "${DOCKER_UID}" -eq "0" ]; then
+  exec /usr/sbin/gosu www-data:www-data php "${@}"
+fi
+php "${@}"
