@@ -29,7 +29,6 @@ CACHE_REPO = "wilmadigital/php-cache"
 
 # Base images build on Monday (cron day-of-week 1), staggered to avoid rate limits.
 BASE_SCHEDULE = {
-    '8.1': '00 7 * * 1',
     '8.2': '30 7 * * 1',
     '8.3': '00 8 * * 1',
     '8.4': '30 8 * * 1',
@@ -38,7 +37,6 @@ BASE_SCHEDULE = {
 
 # Node variants build on Tuesday (cron day-of-week 2), one day after the base images.
 NODE_SCHEDULE = {
-    '8.1': '00 7 * * 2',
     '8.2': '30 7 * * 2',
     '8.3': '00 8 * * 2',
     '8.4': '30 8 * * 2',

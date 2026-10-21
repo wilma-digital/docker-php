@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-This repository contains Docker images for OpenMage PHP containers with automated version management. It supports PHP versions 8.1-8.5, each available with or without Node.js (versions 22, 24, 26). Images come in two variants: `php` (runtime) and `toolbox` (extended with development tools).
+This repository contains Docker images for OpenMage PHP containers with automated version management. It supports PHP versions 8.2-8.5, each available with or without Node.js (versions 22, 24, 26). Images come in two variants: `php` (runtime) and `toolbox` (extended with development tools).
 
 **Patch window per branch**: for each PHP minor we build only the most recent patch
 releases — the last **5** for maintained branches (active or security support) and the last
 **3** for EOL branches — driven by the `maintained` flag in `versions.json`. As of mid-2026
-that is 8.2/8.3/8.4/8.5 (maintained, 5 each) and 8.1 (EOL, 3). `check-php-releases.py`
+that is 8.2/8.3/8.4/8.5 (maintained, 5 each). `check-php-releases.py`
 recomputes this sliding window from php.net, so old patches drop off as new ones ship.
 
 ## Architecture
@@ -26,11 +26,6 @@ The repository uses a **template-based system** to eliminate duplication:
 ├── generate-workflows.py     # Generates GitHub Actions workflows
 ├── check-php-releases.py     # Automated PHP release detection
 └── src/
-    ├── 8.1/
-    │   ├── src/             # PHP 8.1 base
-    │   ├── node22/src/      # PHP 8.1 + Node.js 22
-    │   ├── node24/src/      # PHP 8.1 + Node.js 24
-    │   └── node26/src/      # PHP 8.1 + Node.js 26
     ├── 8.2/
     ├── 8.3/
     ├── 8.4/
@@ -72,7 +67,7 @@ variants on **Tuesday** (`php-<version>-node.yml`), one day later. See "GitHub A
 
 ### Base Image Matrix
 
-- **PHP 8.1-8.4**: `wilmadigital/php-base:bookworm-latest` (Debian Bookworm)
+- **PHP 8.2-8.4**: `wilmadigital/php-base:bookworm-latest` (Debian Bookworm)
 - **PHP 8.5**: `wilmadigital/php-base:trixie-latest` (Debian Trixie)
 
 The `base_image` in `versions.json` is **pinned by digest** (`tag@sha256:...`, the
@@ -262,8 +257,8 @@ layer reuses cache across scheduled rebuilds.
 > billed. Verify availability for this repo before relying on the schedule.
 
 **Images per patch**: base = 2 (php + toolbox); node = 6 (3 Node versions × php+node and
-toolbox+node). With the current window (8.1×3 + 8.2/8.3/8.4/8.5×5 = 23 patches) that is
-23×2 = 46 base images and 23×3×2 = 138 node images per full weekly cycle. The rolling
+toolbox+node). With the current window (8.2/8.3/8.4/8.5×5 = 20 patches) that is
+20×2 = 40 base images and 20×3×2 = 120 node images per full weekly cycle. The rolling
 major.minor tags are aliases on the highest-patch build, not extra builds.
 
 **Triggers** (each workflow):
@@ -290,7 +285,7 @@ Runs hadolint linting on all Dockerfiles for PRs targeting main.
 docker run --rm -i pipelinecomponents/hadolint:latest < src/8.5/src/Dockerfile
 
 # Lint all base versions
-for v in 8.1 8.2 8.3 8.4 8.5; do
+for v in 8.2 8.3 8.4 8.5; do
   echo "Linting PHP $v..."
   docker run --rm -i pipelinecomponents/hadolint:latest < src/$v/src/Dockerfile
 done
