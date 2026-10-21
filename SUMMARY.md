@@ -32,7 +32,7 @@ src/8.X/
 ├── src/              # Base PHP
 ├── node22/src/       # PHP + Node.js 22
 ├── node24/src/       # PHP + Node.js 24
-└── node25/src/       # PHP + Node.js 25
+└── node26/src/       # PHP + Node.js 26
 ```
 
 **Tags**:

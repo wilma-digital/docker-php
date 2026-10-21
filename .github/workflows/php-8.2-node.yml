@@ -1,0 +1,155 @@
+name: "8.2-node"
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/8.2/node*/**'
+      - '.github/workflows/php-8.2-node.yml'
+      - 'Dockerfile.node.template'
+      - 'versions.json'
+  schedule:
+    # Runs the day after the base php-8.2 images are built.
+    - cron: '30 7 * * 2'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+# Prevent parallel workflow runs to avoid Docker Hub rate limits
+concurrency:
+  group: php-8.2-node
+  cancel-in-progress: false
+
+jobs:
+  build-node:
+    name: "PHP ${{ matrix.version }}.${{ matrix.patchVersion }} + Node ${{ matrix.nodeVersion }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['8.2']
+        patchVersion: [31, 32, 33, 34, 35]
+        nodeVersion: [22, 24, 26]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Build and push php+node image
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}
+            ${{ matrix.patchVersion == 35 && format('wilmadigital/php:{0}-node{1}', matrix.version, matrix.nodeVersion) || '' }}
+          context: ./src/${{ matrix.version }}/node${{ matrix.nodeVersion }}/src
+          file: ./src/${{ matrix.version }}/node${{ matrix.nodeVersion }}/src/Dockerfile
+          target: php
+          build-args: |
+            PHP_VERSION=${{ matrix.version }}.${{ matrix.patchVersion }}
+            NODE_VERSION=${{ matrix.nodeVersion }}
+          cache-from: type=registry,ref=wilmadigital/php-cache:${{ matrix.version }}-${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}
+          cache-to: type=registry,ref=wilmadigital/php-cache:${{ matrix.version }}-${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }},mode=max
+
+      - name: Trivy scan php+node
+        uses: aquasecurity/trivy-action@master
+        continue-on-error: true
+        with:
+          image-ref: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}
+          format: 'sarif'
+          output: 'trivy-node.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results for php+node
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('trivy-node.sarif') != ''
+        with:
+          sarif_file: 'trivy-node.sarif'
+          category: 'trivy-node-${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}'
+
+      - name: Generate SBOM for php+node
+        uses: anchore/sbom-action@v0
+        continue-on-error: true
+        with:
+          image: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}
+          format: spdx-json
+          output-file: sbom-node.spdx.json
+
+      - name: Upload SBOM for php+node
+        uses: actions/upload-artifact@v4
+        if: always() && hashFiles('sbom-node.spdx.json') != ''
+        with:
+          name: sbom-node-${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}
+          path: sbom-node.spdx.json
+          retention-days: 90
+
+      - name: Smoke test php+node image
+        run: |
+          docker pull wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}
+          docker run --rm wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }} php -v
+          docker run --rm wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }} node -v
+          docker run --rm wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }} npm -v
+
+      - name: Build and push toolbox+node image
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}-toolbox
+            ${{ matrix.patchVersion == 35 && format('wilmadigital/php:{0}-node{1}-toolbox', matrix.version, matrix.nodeVersion) || '' }}
+          context: ./src/${{ matrix.version }}/node${{ matrix.nodeVersion }}/src
+          file: ./src/${{ matrix.version }}/node${{ matrix.nodeVersion }}/src/Dockerfile
+          target: toolbox
+          build-args: |
+            PHP_VERSION=${{ matrix.version }}.${{ matrix.patchVersion }}
+            NODE_VERSION=${{ matrix.nodeVersion }}
+          cache-from: type=registry,ref=wilmadigital/php-cache:${{ matrix.version }}-${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}-toolbox
+          cache-to: type=registry,ref=wilmadigital/php-cache:${{ matrix.version }}-${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}-toolbox,mode=max
+
+      - name: Trivy scan toolbox+node
+        uses: aquasecurity/trivy-action@master
+        continue-on-error: true
+        with:
+          image-ref: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}-toolbox
+          format: 'sarif'
+          output: 'trivy-toolbox-node.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results for toolbox+node
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('trivy-toolbox-node.sarif') != ''
+        with:
+          sarif_file: 'trivy-toolbox-node.sarif'
+          category: 'trivy-toolbox-node-${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}'
+
+      - name: Generate SBOM for toolbox+node
+        uses: anchore/sbom-action@v0
+        continue-on-error: true
+        with:
+          image: wilmadigital/php:${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}-toolbox
+          format: spdx-json
+          output-file: sbom-toolbox-node.spdx.json
+
+      - name: Upload SBOM for toolbox+node
+        uses: actions/upload-artifact@v4
+        if: always() && hashFiles('sbom-toolbox-node.spdx.json') != ''
+        with:
+          name: sbom-toolbox-node-${{ matrix.version }}.${{ matrix.patchVersion }}-node${{ matrix.nodeVersion }}
+          path: sbom-toolbox-node.spdx.json
+          retention-days: 90

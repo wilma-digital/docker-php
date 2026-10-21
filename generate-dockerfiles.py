@@ -98,6 +98,17 @@ def main():
 
         print(f"✓ Generated {dockerfile_path}")
 
+        # Remove node<X> directories for Node.js versions no longer configured
+        # (e.g. after dropping 25 in favour of 26), so the tree stays in sync.
+        import shutil
+        php_dir = script_dir / 'src' / php_version
+        if php_dir.exists():
+            keep = {f'node{n}' for n in node_versions}
+            for child in php_dir.iterdir():
+                if child.is_dir() and child.name.startswith('node') and child.name not in keep:
+                    print(f"  ✗ Removing stale variant dir {child}")
+                    shutil.rmtree(child, ignore_errors=True)
+
         # Generate Node.js variants.
         # These layer Node.js on the prebuilt php image and need no PHP source,
         # php.ini (FS/) or build context beyond the Dockerfile itself.

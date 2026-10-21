@@ -19,23 +19,23 @@ Production-ready PHP-FPM Docker images optimized for OpenMage/Magento, with opti
 
 | Tag                          | Description                |
 |------------------------------|----------------------------|
-| `wilmadigital/php:8.5.3`         | PHP 8.5.3 runtime (latest) |
-| `wilmadigital/php:8.5.3-toolbox` | PHP 8.5.3 with dev tools   |
-| `wilmadigital/php:8.4.18`        | PHP 8.4.18 runtime         |
-| `wilmadigital/php:8.3.29`        | PHP 8.3.29 runtime         |
-| `wilmadigital/php:8.2.30`        | PHP 8.2.30 runtime         |
+| `wilmadigital/php:8.5.12`        | PHP 8.5.12 runtime (latest) |
+| `wilmadigital/php:8.5.12-toolbox` | PHP 8.5.12 with dev tools  |
+| `wilmadigital/php:8.4.27`        | PHP 8.4.27 runtime         |
+| `wilmadigital/php:8.3.36`        | PHP 8.3.36 runtime         |
+| `wilmadigital/php:8.2.35`        | PHP 8.2.35 runtime         |
 | `wilmadigital/php:8.1.34`        | PHP 8.1.34 runtime         |
 
 ### Node.js Variants
 
 | Tag                                 | Description                    |
 |-------------------------------------|--------------------------------|
-| `wilmadigital/php:8.5.3-node22`         | PHP 8.5.3 + Node.js 22 LTS     |
-| `wilmadigital/php:8.5.3-node24`         | PHP 8.5.3 + Node.js 24 LTS     |
-| `wilmadigital/php:8.5.3-node25`         | PHP 8.5.3 + Node.js 25 Current |
-| `wilmadigital/php:8.5.3-node22-toolbox` | With development tools         |
+| `wilmadigital/php:8.5.12-node22`        | PHP 8.5.12 + Node.js 22 LTS    |
+| `wilmadigital/php:8.5.12-node24`        | PHP 8.5.12 + Node.js 24 LTS    |
+| `wilmadigital/php:8.5.12-node26`        | PHP 8.5.12 + Node.js 26 Current |
+| `wilmadigital/php:8.5.12-node22-toolbox` | With development tools        |
 
-All combinations available for PHP 8.1-8.5 with Node.js 22, 24, 25.
+All combinations available for PHP 8.1-8.5 with Node.js 22, 24, 26.
 
 ## Quick Start
 
