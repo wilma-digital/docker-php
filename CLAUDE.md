@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-This repository contains Docker images for OpenMage PHP containers with automated version management. It supports PHP versions 8.1-8.5. Images come in two variants: `php`/`fpm` (runtime) and `toolbox` (extended with development tools); the toolbox of the newest patch per minor is also offered with Node.js (22, 24; 26 from its LTS start on 2026-10-28).
+This repository contains Docker images for OpenMage PHP containers with automated version management. It supports PHP versions 8.2-8.5. Images come in two variants: `php`/`fpm` (runtime) and `toolbox` (extended with development tools); the toolbox of the newest patch per minor is also offered with Node.js (22, 24; 26 from its LTS start on 2026-10-28).
 
 **Registry**: `ghcr.io/wilma-digital/php` is primary (pushed with `GITHUB_TOKEN`), `docker.io/wilmadigital/php` is a mirror while consumers migrate.
 
 **Patch window per branch**: for each PHP minor we build only the most recent patch
 releases — the last **5** for maintained branches (active or security support) and the last
 **3** for EOL branches — driven by the `maintained` flag in `versions.json`. As of mid-2026
-that is 8.2/8.3/8.4/8.5 (maintained, 5 each) and 8.1 (EOL, 3). `check-php-releases.py`
+that is 8.2/8.3/8.4/8.5 (maintained, 5 each). PHP 8.1 was removed on 2026-10-21 (EOL, no upstream fixes). `check-php-releases.py`
 recomputes this sliding window from php.net, so old patches drop off as new ones ship.
 
 ## Architecture
@@ -21,7 +21,7 @@ recomputes this sliding window from php.net, so old patches drop off as new ones
 The repository uses a **template-based system** to eliminate duplication:
 
 ```
-├── Dockerfile.template       # Base php/toolbox images that still compile PHP (8.1-8.4)
+├── Dockerfile.template       # Base php/toolbox images that still compile PHP (8.2-8.4)
 ├── Dockerfile.official.template  # Base php/toolbox images on the official php image (8.5)
 ├── FS.official/              # Helper scripts copied into official-base build contexts
 ├── Dockerfile.node.template  # Source of truth for the Node.js variants (layers Node on the php image)
@@ -30,10 +30,6 @@ The repository uses a **template-based system** to eliminate duplication:
 ├── generate-workflows.py     # Generates GitHub Actions workflows
 ├── check-php-releases.py     # Automated PHP release detection
 └── src/
-    ├── 8.1/
-    │   ├── src/             # PHP 8.1 base
-    │   ├── node22/src/      # PHP 8.1 + Node.js 22
-    │   └── node24/src/      # PHP 8.1 + Node.js 24
     ├── 8.2/
     ├── 8.3/
     ├── 8.4/
@@ -85,12 +81,12 @@ successful `php-<version>.yml` run on main. For a local build pass
 
 ### Base Image Matrix
 
-- **PHP 8.1-8.4**: compiled on `wilmadigital/php-base:bookworm-latest` (Debian Bookworm),
+- **PHP 8.2-8.4**: compiled on `wilmadigital/php-base:bookworm-latest` (Debian Bookworm),
   pinned by digest (`tag@sha256:...`) in `versions.json`
 - **PHP 8.5**: official `php:8.5.Z-fpm-trixie` (Debian Trixie)
 
 Moving 8.2-8.4 to the official trixie base is the next step (`"build": "official"`,
-`"debian": "trixie"` in `versions.json`, test each minor). 8.1 is EOL and stays as is.
+`"debian": "trixie"` in `versions.json`, test each minor). 8.1 was removed.
 
 ### Build Optimizations
 
@@ -297,7 +293,7 @@ Runs hadolint on all base Dockerfiles and builds + smoke tests the newest 8.5 pa
 docker run --rm -i pipelinecomponents/hadolint:latest < src/8.5/src/Dockerfile
 
 # Lint all base versions
-for v in 8.1 8.2 8.3 8.4 8.5; do
+for v in 8.2 8.3 8.4 8.5; do
   echo "Linting PHP $v..."
   docker run --rm -i pipelinecomponents/hadolint:latest < src/$v/src/Dockerfile
 done

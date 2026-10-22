@@ -8,7 +8,7 @@ jobs:
   lint:
     strategy:
       matrix:
-        version: ['8.1', '8.2', '8.3', '8.4','8.5']
+        version: ['8.2', '8.3', '8.4', '8.5']
     runs-on: ubuntu-latest
     container: pipelinecomponents/hadolint:latest
     steps:
@@ -16,7 +16,7 @@ jobs:
       - uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: ./src/${{ matrix.version }}/src/Dockerfile
-          # The compile template (8.1-8.4) carries DL3008/DL3025 warnings
+          # The compile template (8.2-8.4) carries DL3008/DL3025 warnings
           # (unpinned apt packages); fail on errors only.
           failure-threshold: error
 
