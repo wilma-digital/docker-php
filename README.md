@@ -4,7 +4,7 @@ Production-ready PHP-FPM Docker images optimized for OpenMage/Magento, with opti
 
 ## Features
 
-- **Multiple PHP versions**: 8.1, 8.2, 8.3, 8.4, 8.5
+- **Multiple PHP versions**: 8.2, 8.3, 8.4, 8.5
 - **Node.js variants**: Optional Node.js 22, 24, or 25 LTS
 - **Two image types**: Runtime (`php`) and Development (`toolbox`)
 - **Multi-architecture**: AMD64 and ARM64 support
@@ -35,7 +35,7 @@ Production-ready PHP-FPM Docker images optimized for OpenMage/Magento, with opti
 | `wilmadigital/php:8.5.3-node25`         | PHP 8.5.3 + Node.js 25 Current |
 | `wilmadigital/php:8.5.3-node22-toolbox` | With development tools         |
 
-All combinations available for PHP 8.1-8.5 with Node.js 22, 24, 25.
+All combinations available for PHP 8.2-8.5 with Node.js 22, 24.
 
 ## Quick Start
 
@@ -288,11 +288,10 @@ See [PRODUCTION.md](PRODUCTION.md) for detailed security configuration and best 
 | 8.4         | Active         | TBD           |
 | 8.3         | Active         | November 2026 |
 | 8.2         | Active         | December 2025 |
-| 8.1         | Security fixes | November 2025 |
 
 ## Architecture
 
-- **Base Images**: Debian Bookworm (8.1-8.4), Debian Trixie (8.5)
+- **Base Images**: Debian Bookworm (8.2-8.4), Debian Trixie (8.5)
 - **PHP-FPM**: Compiled from source with custom configure flags
 - **Multi-stage**: Optimized 3-stage build (builder → runtime → toolbox)
 - **Platforms**: linux/amd64, linux/arm64

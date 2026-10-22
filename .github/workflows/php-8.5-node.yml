@@ -43,23 +43,23 @@ jobs:
       # A push can change the base and the node files at once (e.g. a patch bump).
       # Then the base image may not be on ghcr yet; the run chained after
       # php-8.5 builds the variants instead of failing here.
-      - name: Check ghcr.io/wilma-digital/php:8.5.11-toolbox
+      - name: Check ghcr.io/wilma-digital/php:8.5.12-toolbox
         id: check
         env:
           EVENT: ${{ github.event_name }}
         run: |
-          if docker buildx imagetools inspect "ghcr.io/wilma-digital/php:8.5.11-toolbox" >/dev/null 2>&1; then
+          if docker buildx imagetools inspect "ghcr.io/wilma-digital/php:8.5.12-toolbox" >/dev/null 2>&1; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           elif [ "$EVENT" = "push" ]; then
-            echo "::notice::8.5.11-toolbox is not on ghcr yet, the run after workflow 8.5 builds the Node variants."
+            echo "::notice::8.5.12-toolbox is not on ghcr yet, the run after workflow 8.5 builds the Node variants."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
-            echo "::error::ghcr.io/wilma-digital/php:8.5.11-toolbox not found, run workflow 8.5 first."
+            echo "::error::ghcr.io/wilma-digital/php:8.5.12-toolbox not found, run workflow 8.5 first."
             exit 1
           fi
 
   build-node:
-    name: "PHP 8.5.11 toolbox + Node ${{ matrix.nodeVersion }}"
+    name: "PHP 8.5.12 toolbox + Node ${{ matrix.nodeVersion }}"
     needs: plan
     if: needs.plan.outputs.ready == 'true'
     runs-on: ubuntu-latest
@@ -99,10 +99,10 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/wilma-digital/php:8.5.11-toolbox-node${{ matrix.nodeVersion }}
+            ghcr.io/wilma-digital/php:8.5.12-toolbox-node${{ matrix.nodeVersion }}
             ghcr.io/wilma-digital/php:8.5-toolbox-node${{ matrix.nodeVersion }}
             ghcr.io/wilma-digital/php:8.5-node${{ matrix.nodeVersion }}-toolbox
-            docker.io/wilmadigital/php:8.5.11-toolbox-node${{ matrix.nodeVersion }}
+            docker.io/wilmadigital/php:8.5.12-toolbox-node${{ matrix.nodeVersion }}
             docker.io/wilmadigital/php:8.5-toolbox-node${{ matrix.nodeVersion }}
             docker.io/wilmadigital/php:8.5-node${{ matrix.nodeVersion }}-toolbox
           context: ./src/8.5/node${{ matrix.nodeVersion }}/src
@@ -110,23 +110,23 @@ jobs:
           target: toolbox
           build-args: |
             BASE_IMAGE=ghcr.io/wilma-digital/php
-            PHP_VERSION=8.5.11
+            PHP_VERSION=8.5.12
             NODE_VERSION=${{ matrix.nodeVersion }}
           cache-from: type=registry,ref=ghcr.io/wilma-digital/php-cache:8.5-node${{ matrix.nodeVersion }}-toolbox
           cache-to: type=registry,ref=ghcr.io/wilma-digital/php-cache:8.5-node${{ matrix.nodeVersion }}-toolbox,mode=max
 
       - name: Smoke test toolbox+node image
         run: |
-          docker pull ghcr.io/wilma-digital/php:8.5.11-toolbox-node${{ matrix.nodeVersion }}
-          docker run --rm ghcr.io/wilma-digital/php:8.5.11-toolbox-node${{ matrix.nodeVersion }} php -v
-          docker run --rm ghcr.io/wilma-digital/php:8.5.11-toolbox-node${{ matrix.nodeVersion }} node -v
-          docker run --rm ghcr.io/wilma-digital/php:8.5.11-toolbox-node${{ matrix.nodeVersion }} npm -v
+          docker pull ghcr.io/wilma-digital/php:8.5.12-toolbox-node${{ matrix.nodeVersion }}
+          docker run --rm ghcr.io/wilma-digital/php:8.5.12-toolbox-node${{ matrix.nodeVersion }} php -v
+          docker run --rm ghcr.io/wilma-digital/php:8.5.12-toolbox-node${{ matrix.nodeVersion }} node -v
+          docker run --rm ghcr.io/wilma-digital/php:8.5.12-toolbox-node${{ matrix.nodeVersion }} npm -v
 
       - name: Trivy scan toolbox-node
         uses: aquasecurity/trivy-action@master
         continue-on-error: true
         with:
-          image-ref: ghcr.io/wilma-digital/php:8.5.11-toolbox-node${{ matrix.nodeVersion }}
+          image-ref: ghcr.io/wilma-digital/php:8.5.12-toolbox-node${{ matrix.nodeVersion }}
           format: 'sarif'
           output: 'trivy-toolbox-node.sarif'
           severity: 'CRITICAL,HIGH'
@@ -136,13 +136,13 @@ jobs:
         if: always() && hashFiles('trivy-toolbox-node.sarif') != ''
         with:
           sarif_file: 'trivy-toolbox-node.sarif'
-          category: 'trivy-toolbox-8.5.11-node${{ matrix.nodeVersion }}'
+          category: 'trivy-toolbox-8.5.12-node${{ matrix.nodeVersion }}'
 
       - name: Generate SBOM for toolbox-node
         uses: anchore/sbom-action@v0
         continue-on-error: true
         with:
-          image: ghcr.io/wilma-digital/php:8.5.11-toolbox-node${{ matrix.nodeVersion }}
+          image: ghcr.io/wilma-digital/php:8.5.12-toolbox-node${{ matrix.nodeVersion }}
           format: spdx-json
           output-file: 'sbom-toolbox-node.spdx.json'
 
@@ -150,6 +150,6 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always() && hashFiles('sbom-toolbox-node.spdx.json') != ''
         with:
-          name: 'sbom-toolbox-8.5.11-node${{ matrix.nodeVersion }}'
+          name: 'sbom-toolbox-8.5.12-node${{ matrix.nodeVersion }}'
           path: 'sbom-toolbox-node.spdx.json'
           retention-days: 90

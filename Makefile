@@ -33,7 +33,7 @@ build-85-toolbox: ## Build PHP 8.5 toolbox image for testing
 
 lint: ## Lint all base Dockerfiles with hadolint
 	@echo "→ Linting Dockerfiles..."
-	@for v in 8.1 8.2 8.3 8.4 8.5; do \
+	@for v in 8.2 8.3 8.4 8.5; do \
 		echo "  Checking PHP $$v..."; \
 		docker run --rm -i hadolint/hadolint < src/$$v/src/Dockerfile || exit 1; \
 	done

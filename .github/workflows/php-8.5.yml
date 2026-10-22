@@ -51,19 +51,19 @@ jobs:
           REBUILD_ALL: ${{ inputs.rebuild_all }}
         run: |
           if [ "$EVENT" = "schedule" ]; then
-            SELECTED="11"
+            SELECTED="12"
           elif [ "$REBUILD_ALL" = "true" ]; then
-            SELECTED="7 8 9 10 11"
+            SELECTED="8 9 10 11 12"
           else
             SELECTED=""
-            for p in 7 8 9 10 11; do
-              if [ "$p" = "11" ] || ! docker buildx imagetools inspect "ghcr.io/wilma-digital/php:8.5.$p-fpm" >/dev/null 2>&1; then
+            for p in 8 9 10 11 12; do
+              if [ "$p" = "12" ] || ! docker buildx imagetools inspect "ghcr.io/wilma-digital/php:8.5.$p-fpm" >/dev/null 2>&1; then
                 SELECTED="$SELECTED $p"
               fi
             done
           fi
           PATCHES="[$(echo "$SELECTED" | xargs | tr ' ' ',')]"
-          echo "Building 8.5 patches: $PATCHES (window: [7, 8, 9, 10, 11])"
+          echo "Building 8.5 patches: $PATCHES (window: [8, 9, 10, 11, 12])"
           echo "patches=$PATCHES" >> "$GITHUB_OUTPUT"
 
   build-base:
@@ -186,7 +186,7 @@ jobs:
           P: ${{ matrix.patchVersion }}
         run: |
           NAMES="$V.$P $V.$P-fpm"
-          if [ "$P" = "11" ]; then
+          if [ "$P" = "12" ]; then
             NAMES="$NAMES $V $V-fpm"
           fi
           TAGS=()
@@ -203,7 +203,7 @@ jobs:
           P: ${{ matrix.patchVersion }}
         run: |
           NAMES="$V.$P-toolbox"
-          if [ "$P" = "11" ]; then
+          if [ "$P" = "12" ]; then
             NAMES="$NAMES $V-toolbox"
           fi
           TAGS=()

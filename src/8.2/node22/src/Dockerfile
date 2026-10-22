@@ -13,7 +13,7 @@
 #            (CI: base images on Monday, Node variants on Tuesday).
 
 ARG BASE_IMAGE="ghcr.io/wilma-digital/php"
-ARG PHP_VERSION="8.2.34"
+ARG PHP_VERSION="8.2.35"
 
 FROM ${BASE_IMAGE}:${PHP_VERSION}-toolbox AS toolbox
 
