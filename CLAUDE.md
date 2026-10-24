@@ -328,6 +328,8 @@ Production `php.ini` highlights:
 - `upload_max_filesize = 5M`
 - OPcache: 512MB, 65406 max files
 - Error display: off, logging: on
+- Hardening (#7): `expose_php = Off`, `session.upload_progress.enabled = Off`, `max_input_nesting_level = 64` (explicit default; lower breaks Magento admin forms), `fatal_error_backtraces = Off` (8.5 only)
+- FPM: `pm.max_requests = 500` (workers are recycled)
 
 ## Node.js Support
 
@@ -490,7 +492,7 @@ See **PRODUCTION.md** for comprehensive production deployment guide including:
 - Images published to Docker Hub under `wilmadigital` organization
 - PHP-FPM runs on port 9000
 - Default working directory: `/var/www/html`
-- PHP-FPM config: 10 max children, 2-5 spare servers
+- PHP-FPM config: 10 max children, 2-5 spare servers, 500 max requests per worker
 - Status endpoint: `/status`
 - Container runs as www-data user (UID 33)
 - Health checks enabled by default

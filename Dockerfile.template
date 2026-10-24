@@ -154,6 +154,7 @@ RUN set -xe && \
         echo 'pm.max_children = 10'; \
         echo 'pm.min_spare_servers = 2'; \
         echo 'pm.max_spare_servers = 5'; \
+        echo 'pm.max_requests = 500'; \
         echo 'pm.status_path = /status'; \
     } | tee /usr/local/etc/php-fpm.d/zz-docker.conf
 
