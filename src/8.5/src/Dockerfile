@@ -8,7 +8,7 @@
 #
 # Variables: PHP_VERSION, DEBIAN_CODENAME
 
-ARG PHP_VERSION="8.5.12"
+ARG PHP_VERSION="8.5.13"
 
 FROM mlocati/php-extension-installer:2.12 AS installer
 
